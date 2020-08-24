@@ -1,0 +1,182 @@
+#!/usr/bin/env python
+
+# This script wraps all parts of a real robot required by BenchBot, & manages
+# them via RESTful commands from a remote client
+
+from __future__ import print_function
+
+import argparse
+import flask
+from gevent import event, pywsgi, signal
+import re
+import sys
+
+
+class RealRobotController(object):
+
+    def __init__(self, port, auto_start=True):
+        self.auto_start = auto_start
+
+        self.robot_address = 'http://0.0.0.0:' + str(port)
+
+        self._instance = None
+
+    def next(self):
+        raise NotImplementedError(
+            "Support for moving to the next scene in an "
+            "experiment on a real robot is not yet implemented")
+
+    def restart(self):
+        # Restarts the robot by returning it to the starting point
+        pass
+
+    def run(self):
+        # Setup all of the robot management functions
+        # TODO some of these should probably be POST methods...
+        robot_flask = flask.Flask(__name__)
+
+        @robot_flask.route('/', methods=['GET'])
+        def __hello():
+            return flask.jsonify(
+                "Hello, I am the BenchBot real robot controller")
+
+        @robot_flask.route('/is_collided', methods=['GET'])
+        def __is_collided():
+            return flask.jsonify({'is_collided': self._instance.is_collided()})
+
+        @simulator_flask.route('/is_dirty', methods=['GET'])
+        def __is_dirty():
+            return flask.jsonify({'is_dirty': self._instance.is_dirty()})
+
+        @simulator_flask.route('/is_running', methods=['GET'])
+        def __is_running():
+            return flask.jsonify({'is_running': self._instance.is_running()})
+
+        @simulator_flask.route('/map_selection_number', methods=['GET'])
+        def __map_selection_number():
+            return flask.jsonify({'map_selection_number': self._map_selection})
+
+        @simulator_flask.route('/next', methods=['GET'])
+        def __next():
+            raise NotImplementedError(
+                "Support for moving to the next scene in an "
+                "experiment on a real robot is not yet implemented")
+
+        @simulator_flask.route('/reset', methods=['GET'])
+        def __reset():
+            # Resets the simulator in the current scene
+            try:
+                self.restart()
+                success = self._instance.is_running()
+            except Exception as e:
+                rospy.logerr(e)
+                success = False
+            return flask.jsonify({'reset_success': success})
+
+        @simulator_flask.route('/restart', methods=['GET'])
+        def __restart():
+            return __reset()
+
+        # Configure our server
+        robot_server = pywsgi.WSGIServer(
+            re.split('http[s]?://', self.robot_address)[-1], robot_flask)
+        evt = event.Event()
+        signal.signal(signal.SIGINT, evt.set)
+        signal.signal(signal.SIGQUIT, evt.set)
+        signal.signal(signal.SIGTERM, evt.set)
+
+        # Run the server & start the real robot controller
+        robot_server.start()
+        print("\nReal robot controller is now available @ '%s' ..." %
+              self.robot_address)
+        if self.auto_start:
+            print("Starting the requested real robot ROS stack ... ", end="")
+            sys.stdout.flush()
+            self.start()
+            print("Done")
+        evt.wait()
+        print("\nShutting down the real robot ROS stack & exiting ...")
+        robot_server.stop()
+        self.stop()
+        print("Stopped")
+
+    def start(self):
+        pass
+
+    def stop(self):
+        pass
+
+
+def __valid_file(value):
+    path = os.path.abspath(value)
+    if not os.path.exists(os.path.dirname(path)):
+        raise argparse.ArgumentTypeError(
+            "Output file path '%s' is in a non-existent directory" % value)
+    return path
+
+
+def __valid_envs_path(value):
+    return __valid_program_path(value, [_UNREAL_COMMAND.split(' ', 4)[3]],
+                                "envs")
+
+
+def __valid_map_paths(value):
+    return value.split(':')
+
+
+def __valid_map_path(map_path, envs_path, metadata_location):
+    valid_paths = [
+        yaml.safe_load(open(f))['map_path'] for f in glob.glob(
+            os.path.join(envs_path, metadata_location, '*.yaml'))
+    ]
+    if map_path not in valid_paths:
+        raise argparse.ArgumentTypeError(
+            "Map path '%s' was not found in the environment metadata files at:"
+            " %s" % (map_path, os.path.join(envs_path, metadata_location)))
+    return map_path
+
+
+def __valid_metadata_location(envs_path, metadata_location):
+    if not os.path.exists(os.path.join(envs_path, metadata_location)):
+        raise argparse.ArgumentTypeError(
+            "Environment metadata location does not exist: %s" %
+            os.path.join(envs_path, metadata_location))
+    return metadata_location
+
+
+def __valid_poses(value):
+    # TODO perform a much more robust check for pose validity...
+    values = value.split(':')
+    for p in values:
+        if not re.search(r'\[[0-9\.\-e, ^\]]*\]', value):
+            raise argparse.ArgumentTypeError(
+                "Start pose is not in expected 7-field vector format: %s" %
+                value)
+    return values
+
+
+if __name__ == "__main__":
+    # Parse the input arguments sanely
+    parser = argparse.ArgumentParser(
+        description="Controller for BenchBot real robot")
+    parser.add_argument('map_paths', type=__valid_map_paths)
+    parser.add_argument('start_poses', type=__valid_poses)
+    parser.add_argument('--file-collisions',
+                        default='benchbot_collision',
+                        type=__valid_file)
+    parser.add_argument('--file-dirty-state',
+                        default='benchbot_dirty',
+                        type=__valid_file)
+    parser.add_argument('--path-envs',
+                        default=os.path.abspath('.'),
+                        type=__valid_envs_path)
+    parser.add_argument('--ros-command', default=None)
+    parser.add_argument('--port', type=int, required=True)
+    args = parser.parse_args()
+    __valid_metadata_location(args.path_envs, args.metadata_location)
+    for m in args.map_paths:
+        __valid_map_path(m, args.path_envs, args.metadata_location)
+
+    # Use the controller to run & manage the real robot
+    rrc = RealRobotController(args.port)
+    rrc.run()
