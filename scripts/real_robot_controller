@@ -8,6 +8,7 @@ from __future__ import print_function
 import argparse
 import flask
 from gevent import event, pywsgi, signal
+import os
 import re
 import sys
 
@@ -44,25 +45,25 @@ class RealRobotController(object):
         def __is_collided():
             return flask.jsonify({'is_collided': self._instance.is_collided()})
 
-        @simulator_flask.route('/is_dirty', methods=['GET'])
+        @robot_flask.route('/is_dirty', methods=['GET'])
         def __is_dirty():
             return flask.jsonify({'is_dirty': self._instance.is_dirty()})
 
-        @simulator_flask.route('/is_running', methods=['GET'])
+        @robot_flask.route('/is_running', methods=['GET'])
         def __is_running():
             return flask.jsonify({'is_running': self._instance.is_running()})
 
-        @simulator_flask.route('/map_selection_number', methods=['GET'])
+        @robot_flask.route('/map_selection_number', methods=['GET'])
         def __map_selection_number():
             return flask.jsonify({'map_selection_number': self._map_selection})
 
-        @simulator_flask.route('/next', methods=['GET'])
+        @robot_flask.route('/next', methods=['GET'])
         def __next():
             raise NotImplementedError(
                 "Support for moving to the next scene in an "
                 "experiment on a real robot is not yet implemented")
 
-        @simulator_flask.route('/reset', methods=['GET'])
+        @robot_flask.route('/reset', methods=['GET'])
         def __reset():
             # Resets the simulator in the current scene
             try:
@@ -73,7 +74,7 @@ class RealRobotController(object):
                 success = False
             return flask.jsonify({'reset_success': success})
 
-        @simulator_flask.route('/restart', methods=['GET'])
+        @robot_flask.route('/restart', methods=['GET'])
         def __restart():
             return __reset()
 
@@ -116,8 +117,7 @@ def __valid_file(value):
 
 
 def __valid_envs_path(value):
-    return __valid_program_path(value, [_UNREAL_COMMAND.split(' ', 4)[3]],
-                                "envs")
+    return True
 
 
 def __valid_map_paths(value):
@@ -139,8 +139,8 @@ def __valid_map_path(map_path, envs_path, metadata_location):
 def __valid_metadata_location(envs_path, metadata_location):
     if not os.path.exists(os.path.join(envs_path, metadata_location)):
         raise argparse.ArgumentTypeError(
-            "Environment metadata location does not exist: %s" %
-            os.path.join(envs_path, metadata_location))
+            "Environment metadata location does not exist: %s" % os.path.join(
+                envs_path, metadata_location))
     return metadata_location
 
 
@@ -161,21 +161,18 @@ if __name__ == "__main__":
         description="Controller for BenchBot real robot")
     parser.add_argument('map_paths', type=__valid_map_paths)
     parser.add_argument('start_poses', type=__valid_poses)
-    parser.add_argument('--file-collisions',
-                        default='benchbot_collision',
-                        type=__valid_file)
-    parser.add_argument('--file-dirty-state',
-                        default='benchbot_dirty',
-                        type=__valid_file)
-    parser.add_argument('--path-envs',
-                        default=os.path.abspath('.'),
-                        type=__valid_envs_path)
+    parser.add_argument(
+        '--file-collisions', default='benchbot_collision', type=__valid_file)
+    parser.add_argument(
+        '--file-dirty-state', default='benchbot_dirty', type=__valid_file)
+    parser.add_argument(
+        '--path-envs', default=os.path.abspath('.'), type=__valid_envs_path)
     parser.add_argument('--ros-command', default=None)
     parser.add_argument('--port', type=int, required=True)
     args = parser.parse_args()
-    __valid_metadata_location(args.path_envs, args.metadata_location)
-    for m in args.map_paths:
-        __valid_map_path(m, args.path_envs, args.metadata_location)
+    # __valid_metadata_location(args.path_envs, args.metadata_location)
+    # for m in args.map_paths:
+    #     __valid_map_path(m, args.path_envs, args.metadata_location)
 
     # Use the controller to run & manage the real robot
     rrc = RealRobotController(args.port)
