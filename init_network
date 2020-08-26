@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Settings
+HOST_REGEX='[0-9\.*] benchbot_'
+
+# Ensure a valid remote has been provided
+remote_address="$1"
+if [ -z "$remote_address" ]; then
+  printf "%s\n" "ERROR: No remote BenchBot address supplied"
+  exit 1
+elif [ "$(ping -c 1 "$remote_address" &>/dev/null; echo $?)" -ne 0 ]; then
+  printf "%s\n" \
+    "ERROR: Pinging remote BenchBot address ($remote_address) failed"
+  exit 1
+fi
+
+# Grab the list of hosts from the remote & local
+user="${2:-benchbot}"
+printf "%s\n" "Pulling benchbot_ hosts via SSH from '$user@$remote_address' ..."
+remote_hosts=$(ssh "$user"@"$remote_address" 'cat /etc/hosts' | \
+  grep "$HOST_REGEX")
+printf "\nFound the following relevant remote hosts:\n%s\n" \
+  "$remote_hosts"
+local_hosts=$(cat /etc/hosts | grep "$HOST_REGEX")
+printf "\nREPLACING the following relevant local hosts:\n%s\n" \
+  "$local_hosts"
+
+# Replace all matching hosts on local machine with those from the remote
+# BenchBot machine
+sudo sed -i "/$HOST_REGEX/d" /etc/hosts
+echo "$remote_hosts" | sudo tee -a /etc/hosts > /dev/null
+printf "\nDone.\n"
+
+# Add the route for the host to the current network interface
+# TODO probably shouldn't make sure a sweeping assumption in pulling gateway...
+hosts_mask=$(echo "$remote_hosts" | head -n 1 | \
+  sed 's/\([0-9]*\.[0-9]*\.[0-9]*\.\).*/\10\/24/')
+net_dev=$(ip a | awk '/state UP/ {print $2}' | sed 's/:$//')
+printf "\n%s %s\n" "Adding route for hosts using the subnet mask" \
+  "'$hosts_mask' on device '$net_dev' ..."
+sudo ip route add "$hosts_mask" via "$remote_address" dev "$net_dev"
+printf "Done.\n"
