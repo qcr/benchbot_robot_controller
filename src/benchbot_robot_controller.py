@@ -1,8 +1,3 @@
-#!/usr/bin/env python
-
-# This script wraps all parts of a real robot required by BenchBot, & manages
-# them via RESTful commands from a remote client
-
 from __future__ import print_function
 
 import argparse
@@ -12,8 +7,57 @@ import os
 import re
 import sys
 
+# What does the controller need to do:
 
-class RealRobotController(object):
+# ACTIONS
+# - check for collisions (this is also the source of that route... should do directly)
+# - send cmd velocities on the right topic
+# - receive pose updates via the right topic
+
+# STATE MANAGEMENT
+# - Receive & report collision / dirty states
+# - Run commands to "bring up system" (simulator: pose cmd, sim cmd, unreal cmd, real: robot specific launch file)
+# - Manage the lifecycle of these running processes
+# - Detect when topics have died & error gracefully
+
+# RECEIVE FOLLOWING DATA FROM RUN SCRIPT
+# - Map details (simulator: map path, real: costmap data?)
+# - Possibly a list of map paths for scene change detection mode
+# - Corresponding start poses
+
+# PROVIDE ROUTES FOR
+# - "hello" ping
+# - Checking if collision has occurred
+# - Checking if state is dirty
+# - Connectivity check to required topics
+# - Query currently running map number
+# - Request move to next map
+# - Restarting current map
+# - Restarting from first map
+
+# MISC
+# - Write logs so they can be replayed on demand...
+# - Configurable port & auto_start
+
+# Proposed solution:
+
+# 1. The controller is started by the run script for simulation (as it's the
+#    same machine, & manually started prior on the real robot)
+# 2. As the controller is now not guaranteed to be started by the script, data
+#    shouldn't be passed through the constructor... it instead needs to be
+#    passed via a 'config' route or something
+# 3. Autostart now will not start until it receives a config
+# 4. The 'config' will be a JSON dict of everything the controller needs to know
+#    (could be annoying to create in bash...)
+# 5. The controller is a flask server for handling requests, but also advertises
+#    actuation services on ROS (i.e. when a supervisor has to resolve
+#    'move_distance, 0.5', it would send a service request to the controller
+#    asking to move that distance
+# 6. All the process handling logic has to be generalised... (note the command
+#    to run depends on the robot selection, so should be part of the 'config')
+
+
+class Controller(object):
 
     def __init__(self, port, auto_start=True):
         self.auto_start = auto_start
@@ -143,8 +187,8 @@ def __valid_map_path(map_path, envs_path, metadata_location):
 def __valid_metadata_location(envs_path, metadata_location):
     if not os.path.exists(os.path.join(envs_path, metadata_location)):
         raise argparse.ArgumentTypeError(
-            "Environment metadata location does not exist: %s" % os.path.join(
-                envs_path, metadata_location))
+            "Environment metadata location does not exist: %s" %
+            os.path.join(envs_path, metadata_location))
     return metadata_location
 
 
@@ -165,12 +209,15 @@ if __name__ == "__main__":
         description="Controller for BenchBot real robot")
     parser.add_argument('map_paths', type=__valid_map_paths)
     parser.add_argument('start_poses', type=__valid_poses)
-    parser.add_argument(
-        '--file-collisions', default='benchbot_collision', type=__valid_file)
-    parser.add_argument(
-        '--file-dirty-state', default='benchbot_dirty', type=__valid_file)
-    parser.add_argument(
-        '--path-envs', default=os.path.abspath('.'), type=__valid_envs_path)
+    parser.add_argument('--file-collisions',
+                        default='benchbot_collision',
+                        type=__valid_file)
+    parser.add_argument('--file-dirty-state',
+                        default='benchbot_dirty',
+                        type=__valid_file)
+    parser.add_argument('--path-envs',
+                        default=os.path.abspath('.'),
+                        type=__valid_envs_path)
     parser.add_argument('--ros-command', default=None)
     parser.add_argument('--port', type=int, required=True)
     args = parser.parse_args()
