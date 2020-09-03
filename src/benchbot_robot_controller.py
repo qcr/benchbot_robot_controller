@@ -52,18 +52,27 @@ import sys
 # 5. The controller is a flask server for handling requests, but also advertises
 #    actuation services on ROS (i.e. when a supervisor has to resolve
 #    'move_distance, 0.5', it would send a service request to the controller
-#    asking to move that distance
+#    asking to move that distance)
 # 6. All the process handling logic has to be generalised... (note the command
 #    to run depends on the robot selection, so should be part of the 'config')
+
+DEFAULT_CONFIG = {
+    'file_dirty_state': '/tmp/benchbot_dirty',
+    'file_collisions': '/tmp/benchbot_collision',
+    'logs_dir': '/tmp/benchbot_logs',
+    'map_data': [],
+    'start_cmds': [],
+    'start_poses': [],
+}
 
 
 class Controller(object):
 
-    def __init__(self, port, auto_start=True):
-        self.auto_start = auto_start
-
+    def __init__(self, port=10000, auto_start=True):
         self.robot_address = 'http://0.0.0.0:' + str(port)
-
+        self._auto_start = auto_start
+        self._config = None
+        self._config_valid = False
         self._instance = None
 
     def next(self):
@@ -84,6 +93,13 @@ class Controller(object):
         def __hello():
             return flask.jsonify(
                 "Hello, I am the BenchBot real robot controller")
+
+        @robot_flask.route('/configure', methods=['POST'])
+        def __configure(new_config):
+            self.setConfig(new_config)
+            if self._auto_start and self._config_valid:
+                self.start()
+            return flask.jsonify({'configuration_valid': self._config_valid})
 
         @robot_flask.route('/is_collided', methods=['GET'])
         def __is_collided():
@@ -148,6 +164,16 @@ class Controller(object):
         robot_server.stop()
         self.stop()
         print("Stopped")
+
+    def setConfig(self, config):
+        # Copy in the merged dicts
+        self._config = DEFAULT_CONFIG.copy()
+        self._config.update(config)
+
+        # Update verdict on whether config is valid (things like auto_start may
+        # be waiting for a valid config)
+        # TODO proper checks...
+        self._config_valid = True
 
     def start(self):
         pass
