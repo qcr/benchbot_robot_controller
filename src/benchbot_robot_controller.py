@@ -5,6 +5,7 @@ import flask
 from gevent import event, pywsgi, signal
 import os
 import re
+import subprocess
 import sys
 
 # What does the controller need to do:
@@ -64,6 +65,84 @@ DEFAULT_CONFIG = {
     'start_cmds': [],
     'start_poses': [],
 }
+
+_CMD_DELETE_FILE = 'rm -f $FILENAME'
+_CMD_FILE_EXISTS = '[ -f $FILENAME ]'
+
+
+class ControllerInstance(object):
+
+    def __init__(self, config):
+        self.config = config
+
+        self._cmds = None
+        self._processes = None
+        self._log_files = None
+
+    def is_collided(self):
+        return (subprocess.Popen(_CMD_FILE_EXISTS.replace(
+            '$FILENAME', self.config.file_collisions),
+                                 shell=True,
+                                 executable='/bin/bash').wait() == 0)
+
+    def is_dirty(self):
+        return (subprocess.Popen(_CMD_FILE_EXISTS.replace(
+            '$FILENAME', self.config.file_dirty_state),
+                                 shell=True,
+                                 executable='/bin/bash').wait() == 0)
+
+    def is_running(self):
+        # TODO do this properly with a list of topics sent as part of the
+        # config
+        return self._processes != None
+
+    def start(self):
+        if self.is_running():
+            print("Controller Instance already appears to be running. Please "
+                  "stop the existing instance before starting again.")
+            return False
+
+        # Get a set of commands by replacing variables with the config values
+        # TODO
+        self._cmds = self.config.start_cmds
+
+        # Start the set of commands, holding onto the process so we can manage
+        # the lifecycle
+        self._log_files = [
+            open(os.path.join(self.config.logs_dir), i)
+            for i in range(0, len(self._cmds))
+        ]
+        self._processes = [
+            subprocess.Popen(c,
+                             shell=True,
+                             executable='/bin/bash',
+                             stdout=l,
+                             stderr=l,
+                             preexec_fn=os.setsid)
+            for c, l in zip(self._cmds, self._log_files)
+        ]
+
+        # Wait until we move into a running state
+        # TODO
+        return True
+
+    def stop(self):
+        if not self.is_running():
+            print("Controller Instance is not running. Skipping stop.")
+            return False
+
+        # Stop all of the open processes
+        for p in self._processes:
+            os.killpg(os.getpgid(p.pid), signal.SIGINT)
+        for p in ps:
+            p.wait()
+        self._processes = None
+
+        # Clear all temporary files
+        for f in [self.config.file_collisions, self.config.file_dirty_state]:
+            subprocess.Popen(_CMD_DELETE_FILE.replace('$FILENAME', f),
+                             shell=True,
+                             executable='/bin/bash').wait()
 
 
 class Controller(object):
@@ -152,13 +231,21 @@ class Controller(object):
 
         # Run the server & start the real robot controller
         robot_server.start()
-        print("\nReal robot controller is now available @ '%s' ..." %
+        print("\nRobot controller is now available @ '%s' ..." %
               self.robot_address)
-        if self.auto_start:
-            print("Starting the requested real robot ROS stack ... ", end="")
-            sys.stdout.flush()
-            self.start()
-            print("Done")
+        print("Waiting to receive valid config data...")
+        while not self._config_valid:
+            if evt.wait(0.1):
+                break
+
+            if self.auto_start and self._config_valid:
+                print("Starting the requested real robot ROS stack ... ",
+                      end="")
+                sys.stdout.flush()
+                self.start()
+                print("Done")
+
+        # Wait until we get an exit signal, then shut down gracefully
         evt.wait()
         print("\nShutting down the real robot ROS stack & exiting ...")
         robot_server.stop()
