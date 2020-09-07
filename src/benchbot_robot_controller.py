@@ -145,7 +145,7 @@ class ControllerInstance(object):
                              executable='/bin/bash').wait()
 
 
-class Controller(object):
+class RobotController(object):
 
     def __init__(self, port=10000, auto_start=True):
         self.robot_address = 'http://0.0.0.0:' + str(port)
@@ -238,7 +238,7 @@ class Controller(object):
             if evt.wait(0.1):
                 break
 
-            if self.auto_start and self._config_valid:
+            if self._auto_start and self._config_valid:
                 print("Starting the requested real robot ROS stack ... ",
                       end="")
                 sys.stdout.flush()
@@ -269,75 +269,13 @@ class Controller(object):
         pass
 
 
-def __valid_file(value):
-    path = os.path.abspath(value)
-    if not os.path.exists(os.path.dirname(path)):
-        raise argparse.ArgumentTypeError(
-            "Output file path '%s' is in a non-existent directory" % value)
-    return path
-
-
-def __valid_envs_path(value):
-    return True
-
-
-def __valid_map_paths(value):
-    return value.split(':')
-
-
-def __valid_map_path(map_path, envs_path, metadata_location):
-    valid_paths = [
-        yaml.safe_load(open(f))['map_path'] for f in glob.glob(
-            os.path.join(envs_path, metadata_location, '*.yaml'))
-    ]
-    if map_path not in valid_paths:
-        raise argparse.ArgumentTypeError(
-            "Map path '%s' was not found in the environment metadata files at:"
-            " %s" % (map_path, os.path.join(envs_path, metadata_location)))
-    return map_path
-
-
-def __valid_metadata_location(envs_path, metadata_location):
-    if not os.path.exists(os.path.join(envs_path, metadata_location)):
-        raise argparse.ArgumentTypeError(
-            "Environment metadata location does not exist: %s" %
-            os.path.join(envs_path, metadata_location))
-    return metadata_location
-
-
-def __valid_poses(value):
-    # TODO perform a much more robust check for pose validity...
-    values = value.split(':')
-    for p in values:
-        if not re.search(r'\[[0-9\.\-e, ^\]]*\]', value):
-            raise argparse.ArgumentTypeError(
-                "Start pose is not in expected 7-field vector format: %s" %
-                value)
-    return values
-
-
 if __name__ == "__main__":
     # Parse the input arguments sanely
     parser = argparse.ArgumentParser(
-        description="Controller for BenchBot real robot")
-    parser.add_argument('map_paths', type=__valid_map_paths)
-    parser.add_argument('start_poses', type=__valid_poses)
-    parser.add_argument('--file-collisions',
-                        default='benchbot_collision',
-                        type=__valid_file)
-    parser.add_argument('--file-dirty-state',
-                        default='benchbot_dirty',
-                        type=__valid_file)
-    parser.add_argument('--path-envs',
-                        default=os.path.abspath('.'),
-                        type=__valid_envs_path)
-    parser.add_argument('--ros-command', default=None)
+        description="Controller for a BenchBot robot")
     parser.add_argument('--port', type=int, required=True)
     args = parser.parse_args()
-    # __valid_metadata_location(args.path_envs, args.metadata_location)
-    # for m in args.map_paths:
-    #     __valid_map_path(m, args.path_envs, args.metadata_location)
 
     # Use the controller to run & manage the real robot
-    rrc = RealRobotController(args.port)
+    rrc = RobotController(args.port)
     rrc.run()

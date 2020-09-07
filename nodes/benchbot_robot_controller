@@ -2,9 +2,9 @@
 
 import rospy
 
-from benchbot_robot_controller import Controller
+from benchbot_robot_controller import RobotController
 
 if __name__ == "__main__":
     rospy.init_node("benchbot_robot_controller")
-    c = Controller()
-    c.run()
+    rc = RobotController()
+    rc.run()
