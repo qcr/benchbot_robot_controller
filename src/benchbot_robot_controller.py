@@ -174,8 +174,8 @@ class RobotController(object):
                 "Hello, I am the BenchBot real robot controller")
 
         @robot_flask.route('/configure', methods=['POST'])
-        def __configure(new_config):
-            self.setConfig(new_config)
+        def __configure():
+            self.setConfig(flask.request.data)
             if self._auto_start and self._config_valid:
                 self.start()
             return flask.jsonify({'configuration_valid': self._config_valid})
@@ -183,7 +183,7 @@ class RobotController(object):
         @robot_flask.route('/is_collided', methods=['GET'])
         def __is_collided():
             return flask.jsonify({'is_collided': False})
-            return flask.jsonify({'is_collided': self._instance.is_collided()})
+            # return flask.jsonify({'is_collided': self._instance.is_collided()})
 
         @robot_flask.route('/is_dirty', methods=['GET'])
         def __is_dirty():
@@ -263,6 +263,8 @@ class RobotController(object):
         self._config_valid = True
 
     def start(self):
+        print("STARTING (%s):" % self._config_valid)
+        print(self._config)
         pass
 
     def stop(self):
