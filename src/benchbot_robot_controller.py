@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import traceback
 
 # What does the controller need to do:
 
@@ -57,13 +58,19 @@ import sys
 # 6. All the process handling logic has to be generalised... (note the command
 #    to run depends on the robot selection, so should be part of the 'config')
 
-DEFAULT_CONFIG = {
+DEFAULT_CONFIG_ROBOT = {
     'file_dirty_state': '/tmp/benchbot_dirty',
     'file_collisions': '/tmp/benchbot_collision',
     'logs_dir': '/tmp/benchbot_logs',
-    'map_data': [],
     'start_cmds': [],
-    'start_poses': [],
+}
+
+VARIABLES = {
+    'ENVS_PATH': "os.environ['BENCHBOT_ENVS_PATH']",
+    'ISAAC_PATH': "os.environ['ISAAC_SDK_PATH']",
+    'MAP_PATH': "self.config_env['map_path']",
+    'SIM_PATH': "os.environ['BENCHBOT_SIMULATOR_PATH']",
+    'START_POSE': "self.config_env['start_pose_local']"
 }
 
 _CMD_DELETE_FILE = 'rm -f $FILENAME'
@@ -72,22 +79,28 @@ _CMD_FILE_EXISTS = '[ -f $FILENAME ]'
 
 class ControllerInstance(object):
 
-    def __init__(self, config):
-        self.config = config
+    def __init__(self, config_robot, config_env):
+        self.config_robot = config_robot
+        self.config_env = config_env
 
         self._cmds = None
         self._processes = None
         self._log_files = None
 
+    def _replaceVariables(self, text):
+        for k, v in VARIABLES.items():
+            text = text.replace("$%s" % k, eval(v))
+        return text
+
     def is_collided(self):
         return (subprocess.Popen(_CMD_FILE_EXISTS.replace(
-            '$FILENAME', self.config.file_collisions),
+            '$FILENAME', self.config_robot['file_collisions']),
                                  shell=True,
                                  executable='/bin/bash').wait() == 0)
 
     def is_dirty(self):
         return (subprocess.Popen(_CMD_FILE_EXISTS.replace(
-            '$FILENAME', self.config.file_dirty_state),
+            '$FILENAME', self.config_robot['file_dirty_state']),
                                  shell=True,
                                  executable='/bin/bash').wait() == 0)
 
@@ -102,14 +115,23 @@ class ControllerInstance(object):
                   "stop the existing instance before starting again.")
             return False
 
+        print("ATTEMPTING TO START:")
+        print(self)
+
         # Get a set of commands by replacing variables with the config values
         # TODO
-        self._cmds = self.config.start_cmds
+        self._cmds = [
+            self._replaceVariables(c) for c in self.config_robot['start_cmds']
+        ]
+        print("Running the following commands:")
+        for c in self._cmds:
+            print(c)
+        return True
 
         # Start the set of commands, holding onto the process so we can manage
         # the lifecycle
         self._log_files = [
-            open(os.path.join(self.config.logs_dir), i)
+            open(os.path.join(self.config_robot['logs_dir']), i)
             for i in range(0, len(self._cmds))
         ]
         self._processes = [
@@ -139,7 +161,10 @@ class ControllerInstance(object):
         self._processes = None
 
         # Clear all temporary files
-        for f in [self.config.file_collisions, self.config.file_dirty_state]:
+        for f in [
+                self.config_robot['file_collisions'],
+                self.config_robot['file_dirty_state']
+        ]:
             subprocess.Popen(_CMD_DELETE_FILE.replace('$FILENAME', f),
                              shell=True,
                              executable='/bin/bash').wait()
@@ -149,10 +174,12 @@ class RobotController(object):
 
     def __init__(self, port=10000, auto_start=True):
         self.robot_address = 'http://0.0.0.0:' + str(port)
+
         self._auto_start = auto_start
         self._config = None
         self._config_valid = False
         self._instance = None
+        self._map_selection = None
 
     def next(self):
         raise NotImplementedError(
@@ -175,9 +202,13 @@ class RobotController(object):
 
         @robot_flask.route('/configure', methods=['POST'])
         def __configure():
-            self.setConfig(flask.request.data)
-            if self._auto_start and self._config_valid:
-                self.start()
+            try:
+                self.setConfig(flask.request.json)
+                if self._auto_start and self._config_valid:
+                    self.start()
+            except Exception as e:
+                print(traceback.format_exc())
+                raise (e)
             return flask.jsonify({'configuration_valid': self._config_valid})
 
         @robot_flask.route('/is_collided', methods=['GET'])
@@ -254,8 +285,16 @@ class RobotController(object):
 
     def setConfig(self, config):
         # Copy in the merged dicts
-        self._config = DEFAULT_CONFIG.copy()
-        self._config.update(config)
+        self._config = {
+            'robot': DEFAULT_CONFIG_ROBOT.copy(),
+            'environments': {}
+        }
+        for k in self._config:
+            self._config[k].update(config[k])
+
+        # Set map selection as lowest order by default
+        self._map_selection = min(self._config['environments'].items(),
+                                  key=lambda e: e[1]['order'])[0]
 
         # Update verdict on whether config is valid (things like auto_start may
         # be waiting for a valid config)
@@ -263,9 +302,10 @@ class RobotController(object):
         self._config_valid = True
 
     def start(self):
-        print("STARTING (%s):" % self._config_valid)
-        print(self._config)
-        pass
+        self._instance = ControllerInstance(
+            self._config['robot'],
+            self._config['environments'][self._map_selection])
+        self._instance.start()
 
     def stop(self):
         pass
