@@ -66,7 +66,7 @@ DEFAULT_CONFIG_ROBOT = {
 }
 
 VARIABLES = {
-    'ENVS_PATH': "os.environ['BENCHBOT_ENVS_PATH']",
+    'ENVS_PATH': "os.path.dirname(self.config_env['path'])",
     'ISAAC_PATH': "os.environ['ISAAC_SDK_PATH']",
     'MAP_PATH': "self.config_env['map_path']",
     'SIM_PATH': "os.environ['BENCHBOT_SIMULATOR_PATH']",
@@ -82,14 +82,15 @@ class ControllerInstance(object):
     def __init__(self, config_robot, config_env):
         self.config_robot = config_robot
         self.config_env = config_env
+        print(self.config_env)
 
         self._cmds = None
         self._processes = None
         self._log_files = None
 
-    def _replaceVariables(self, text):
+    def _replace_variables(self, text):
         for k, v in VARIABLES.items():
-            text = text.replace("$%s" % k, eval(v))
+            text = text.replace("$%s" % k, str(eval(v)))
         return text
 
     def is_collided(self):
@@ -111,35 +112,24 @@ class ControllerInstance(object):
 
     def start(self):
         if self.is_running():
-            print("Controller Instance already appears to be running. Please "
-                  "stop the existing instance before starting again.")
+            print("\nController Instance already appears to be running. "
+                  "Please stop the existing instance before starting again.")
             return False
 
-        print("ATTEMPTING TO START:")
-        print(self)
-
         # Get a set of commands by replacing variables with the config values
-        # TODO
         self._cmds = [
-            self._replaceVariables(c) for c in self.config_robot['start_cmds']
+            self._replace_variables(c) for c in self.config_robot['start_cmds']
         ]
-        print("Running the following commands:")
-        for c in self._cmds:
-            print(c)
-        return True
+        print("Running command:")
+        print(self._cmds[0])
 
         # Start the set of commands, holding onto the process so we can manage
         # the lifecycle
-        self._log_files = [
-            open(os.path.join(self.config_robot['logs_dir']), i)
-            for i in range(0, len(self._cmds))
-        ]
+        self.start_logging()
         self._processes = [
             subprocess.Popen(c,
                              shell=True,
                              executable='/bin/bash',
-                             stdout=l,
-                             stderr=l,
                              preexec_fn=os.setsid)
             for c, l in zip(self._cmds, self._log_files)
         ]
@@ -148,17 +138,26 @@ class ControllerInstance(object):
         # TODO
         return True
 
+    def start_logging(self):
+        if not os.path.exists(self.config_robot['logs_dir']):
+            os.makedirs(self.config_robot['logs_dir'])
+        self._log_files = [
+            open(os.path.join(self.config_robot['logs_dir'], str(i)), 'w+')
+            for i in range(0, len(self._cmds))
+        ]
+
     def stop(self):
         if not self.is_running():
             print("Controller Instance is not running. Skipping stop.")
             return False
 
-        # Stop all of the open processes
+        # Stop all of the open processes & logging
         for p in self._processes:
             os.killpg(os.getpgid(p.pid), signal.SIGINT)
-        for p in ps:
+        for p in self._processes:
             p.wait()
         self._processes = None
+        self.stop_logging()
 
         # Clear all temporary files
         for f in [
@@ -168,6 +167,10 @@ class ControllerInstance(object):
             subprocess.Popen(_CMD_DELETE_FILE.replace('$FILENAME', f),
                              shell=True,
                              executable='/bin/bash').wait()
+
+    def stop_logging(self):
+        # TODO
+        pass
 
 
 class RobotController(object):
@@ -188,7 +191,8 @@ class RobotController(object):
 
     def restart(self):
         # Restarts the robot by returning it to the starting point
-        pass
+        self.stop()
+        self.start()
 
     def run(self):
         # Setup all of the robot management functions
@@ -204,8 +208,6 @@ class RobotController(object):
         def __configure():
             try:
                 self.setConfig(flask.request.json)
-                if self._auto_start and self._config_valid:
-                    self.start()
             except Exception as e:
                 print(traceback.format_exc())
                 raise (e)
@@ -244,7 +246,7 @@ class RobotController(object):
                 self.restart()
                 success = self._instance.is_running()
             except Exception as e:
-                rospy.logerr(e)
+                print(e)
                 success = False
             return flask.jsonify({'reset_success': success})
 
@@ -308,7 +310,8 @@ class RobotController(object):
         self._instance.start()
 
     def stop(self):
-        pass
+        if self._instance is not None:
+            self._instance.stop()
 
 
 if __name__ == "__main__":
