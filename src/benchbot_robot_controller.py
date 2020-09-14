@@ -180,8 +180,8 @@ class RobotController(object):
         self.robot_address = 'http://0.0.0.0:' + str(port)
 
         self._auto_start = auto_start
-        self._config = None
-        self._config_valid = False
+        self.config = None
+        self.config_valid = False
         self._instance = None
         self._map_selection = None
 
@@ -208,11 +208,11 @@ class RobotController(object):
         @robot_flask.route('/configure', methods=['POST'])
         def __configure():
             try:
-                self.setConfig(flask.request.json)
+                self.set_config(flask.request.json)
             except Exception as e:
                 print(traceback.format_exc())
                 raise (e)
-            return flask.jsonify({'configuration_valid': self._config_valid})
+            return flask.jsonify({'configuration_valid': self.config_valid})
 
         @robot_flask.route('/is_collided', methods=['GET'])
         def __is_collided():
@@ -268,11 +268,11 @@ class RobotController(object):
         print("\nRobot controller is now available @ '%s' ..." %
               self.robot_address)
         print("Waiting to receive valid config data...")
-        while not self._config_valid:
+        while not self.config_valid:
             if evt.wait(0.1):
                 break
 
-            if self._auto_start and self._config_valid:
+            if self._auto_start and self.config_valid:
                 print("Starting the requested real robot ROS stack ... ",
                       end="")
                 sys.stdout.flush()
@@ -286,28 +286,30 @@ class RobotController(object):
         self.stop()
         print("Stopped")
 
-    def setConfig(self, config):
+    def set_config(self, config):
         # Copy in the merged dicts
-        self._config = {
+        self.config = {
             'robot': DEFAULT_CONFIG_ROBOT.copy(),
             'environments': {}
         }
-        for k in self._config:
-            self._config[k].update(config[k])
+        for k in self.config:
+            self.config[k].update(config[k])
 
         # Set map selection as lowest order by default
-        self._map_selection = min(self._config['environments'].items(),
+        self._map_selection = min(self.config['environments'].items(),
                                   key=lambda e: e[1]['order'])[0]
+
+        # Register all of the required connections
 
         # Update verdict on whether config is valid (things like auto_start may
         # be waiting for a valid config)
         # TODO proper checks...
-        self._config_valid = True
+        self.config_valid = True
 
     def start(self):
         self._instance = ControllerInstance(
-            self._config['robot'],
-            self._config['environments'][self._map_selection])
+            self.config['robot'],
+            self.config['environments'][self._map_selection])
         self._instance.start()
 
     def stop(self):
