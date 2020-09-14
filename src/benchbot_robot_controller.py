@@ -82,7 +82,6 @@ class ControllerInstance(object):
     def __init__(self, config_robot, config_env):
         self.config_robot = config_robot
         self.config_env = config_env
-        print(self.config_env)
 
         self._cmds = None
         self._processes = None
@@ -130,6 +129,8 @@ class ControllerInstance(object):
             subprocess.Popen(c,
                              shell=True,
                              executable='/bin/bash',
+                             stdout=l,
+                             stderr=l,
                              preexec_fn=os.setsid)
             for c, l in zip(self._cmds, self._log_files)
         ]
