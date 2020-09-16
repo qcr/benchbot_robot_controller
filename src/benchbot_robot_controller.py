@@ -10,6 +10,7 @@ import re
 import rospy
 import subprocess
 import sys
+import tf2_ros
 import threading
 import traceback
 
@@ -205,6 +206,8 @@ class RobotController(object):
         self.config_valid = False
 
         self.connections = {}
+        self.tf_buffer = tf2_ros.Buffer()
+        self._tf_listener = tf2_ros.TransformListener(self.tf_buffer)
 
         self._auto_start = auto_start
         self._instance = None
