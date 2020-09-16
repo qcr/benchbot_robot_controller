@@ -215,17 +215,17 @@ class RobotController(object):
             topic_class = getattr(importlib.import_module('%s.msg' % x[0]),
                                   x[1])
 
-        callback_supervisor_fn = None
-        if 'callback_supervisor' in connection_data:
-            callback_supervisor_fn = RobotController._dynamic_callback_import(
-                connection_data['callback_supervisor'])
+        callback_robot_fn = None
+        if 'callback_robot' in connection_data:
+            callback_robot_fn = RobotController._dynamic_callback_import(
+                connection_data['callback_robot'])
 
         callback_caching_fn = None
         if 'callback_caching' in connection_data:
             callback_caching_fn = RobotController._dynamic_callback_import(
                 connection_data['callback_caching'])
 
-        return (topic_class, callback_supervisor_fn, callback_caching_fn)
+        return (topic_class, callback_robot_fn, callback_caching_fn)
 
     @staticmethod
     def _dynamic_callback_import(callback_string):
@@ -243,16 +243,15 @@ class RobotController(object):
             data = deepcopy(self.connections[connection_name]['data'])
             self.connections[connection_name]['condition'].release()
 
-            return (data
-                    if self.connections[connection_name]['callback_supervisor']
-                    is None else
-                    self.connections[connection_name]['callback_supervisor'](
+            return (data if
+                    self.connections[connection_name]['callback_robot'] is None
+                    else self.connections[connection_name]['callback_robot'](
                         data, self))
         elif self.connections[connection_name]['type'] == CONN_API_TO_ROS:
-            if self.connections[connection_name]['callback_supervisor'] is None:
+            if self.connections[connection_name]['callback_robot'] is None:
                 self.connections[connection_name]['ros'].publish(data)
             else:
-                self.connections[connection_name]['callback_supervisor'](
+                self.connections[connection_name]['callback_robot'](
                     data, self.connections[connection_name]['ros'], self)
         else:
             print("UNIMPLEMENTED CONNECTION CALL: %s" %
@@ -274,13 +273,13 @@ class RobotController(object):
 
     def _register_connection(self, connection_name, connection_data):
         # Pull out imported components from the connection data
-        topic_class, callback_supervisor_fn, callback_caching_fn = (
+        topic_class, callback_robot_fn, callback_caching_fn = (
             RobotController._attempt_connection_imports(connection_data))
 
-        # Register the connection with the supervisor
+        # Register the connection with the robot
         self.connections[connection_name] = {
             'type': connection_data['connection'],
-            'callback_supervisor': callback_supervisor_fn,
+            'callback_robot': callback_robot_fn,
             'callback_caching': callback_caching_fn,
             'ros': None,
             'data': None,
