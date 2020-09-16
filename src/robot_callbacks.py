@@ -92,7 +92,7 @@ def __yaw_b_wrt_a(matrix_a, matrix_b):
                                      matrix_b)[0:3, 0:3]).as_euler('XYZ')[2]
 
 
-def _debug_move(data, publisher, supervisor):
+def _debug_move(data, publisher, controller):
     # Accepts:
     # - rot_yaw: forms a tf matrix using yaw alone
     # - rot_xyzw: forms a tf matrix using xyzq quat
@@ -106,7 +106,7 @@ def _debug_move(data, publisher, supervisor):
         return ("rpy: %f, %f, %f  xyz: %f, %f, %f" %
                 tuple(np.hstack((rpy, pose[0:3, 3].transpose()))))
 
-    pose_a = _current_pose(supervisor)
+    pose_a = _current_pose(controller)
     print("STARTING @ POSE: %s" % print_pose(pose_a))
     relative_pose = (__transrpy_to_tf_matrix(
         __safe_dict_get(data, 'trans_xyz', [0, 0, 0]),
@@ -117,27 +117,27 @@ def _debug_move(data, publisher, supervisor):
     print("GOAL POSE (RELATIVE): %s" % print_pose(relative_pose))
     print("GOAL POSE (ABSOLUTE): %s" %
           print_pose(np.matmul(pose_a, relative_pose)))
-    _move_to_pose(np.matmul(pose_a, relative_pose), publisher, supervisor)
-    pose_b = _current_pose(supervisor)
+    _move_to_pose(np.matmul(pose_a, relative_pose), publisher, controller)
+    pose_b = _current_pose(controller)
     print("FINAL POSE (RELATIVE): %s" %
           print_pose(__tr_b_wrt_a(pose_a, pose_b)))
     print("FINAL POSE (ABSOLUTE): %s" % print_pose(pose_b))
 
 
-def _current_pose(supervisor):
+def _current_pose(controller):
     return __tf_ros_stamped_to_tf_matrix(
-        supervisor.tf_buffer.lookup_transform(
-            supervisor.config['robot']['global_frame'],
-            supervisor.config['robot']['robot_frame'], rospy.Time()))
+        controller.tf_buffer.lookup_transform(
+            controller.config['robot']['global_frame'],
+            controller.config['robot']['robot_frame'], rospy.Time()))
 
 
-def _move_to_angle(goal, publisher, supervisor):
+def _move_to_angle(goal, publisher, controller):
     # Servo until orientation matches that of the requested goal
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while not supervisor._robot('is_collided')['is_collided']:
+    while not controller._robot('is_collided')['is_collided']:
         # Get latest orientation error
-        orientation_error = __yaw_b_wrt_a(_current_pose(supervisor), goal)
+        orientation_error = __yaw_b_wrt_a(_current_pose(controller), goal)
 
         # Bail if exit conditions are met
         if np.abs(orientation_error) < _MOVE_TOL_YAW:
@@ -151,7 +151,7 @@ def _move_to_angle(goal, publisher, supervisor):
     publisher.publish(Twist())
 
 
-def _move_to_pose(goal, publisher, supervisor):
+def _move_to_pose(goal, publisher, controller):
     # Servo to desired pose using control described in Robotics, Vision, &
     # Control 2nd Ed (Corke, p. 108)
     # NOTE we also had to handle adjusting alpha correctly for reversing
@@ -160,9 +160,9 @@ def _move_to_pose(goal, publisher, supervisor):
     # beta = angle between current yaw & desired yaw
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while not supervisor._robot('is_collided')['is_collided']:
+    while not controller._robot('is_collided')['is_collided']:
         # Get latest position error
-        current = _current_pose(supervisor)
+        current = _current_pose(controller)
         rho = __dist_from_a_to_b(current, goal)
         alpha = __pi_wrap(__ang_to_b(current, goal) - __yaw(current))
         beta = __pi_wrap(__yaw(goal) - __ang_to_b(current, goal))
@@ -178,7 +178,7 @@ def _move_to_pose(goal, publisher, supervisor):
         # aims to drive the robot in at the correct angle, if it is already
         # "in" but the angle is wrong, it will get stuck!)
         if rho < _MOVE_TOL_DIST:
-            _move_to_angle(goal, publisher, supervisor)
+            _move_to_angle(goal, publisher, controller)
             break
 
         # Construct & send velocity msg
@@ -191,17 +191,17 @@ def _move_to_pose(goal, publisher, supervisor):
     publisher.publish(Twist())
 
 
-def create_pose_list(data, supervisor):
+def create_pose_list(data, controller):
     # TODO REMOVE HACK FOR FIXING CAMERA NAME!!!
     tfs = {
         p: __tf_ros_stamped_to_tf_matrix(
-            supervisor.tf_buffer.lookup_transform(
-                supervisor.config['robot']['global_frame'], p, rospy.Time()))
-        for p in supervisor.config['robot']['poses']
+            controller.tf_buffer.lookup_transform(
+                controller.config['robot']['global_frame'], p, rospy.Time()))
+        for p in controller.config['robot']['poses']
     }
     return jsonpickle.encode({
         'camera' if 'left_camera' in k else k: {
-            'parent_frame': supervisor.config['robot']['global_frame'],
+            'parent_frame': controller.config['robot']['global_frame'],
             'translation_xyz': v[:-1, -1],
             'rotation_rpy': Rot.from_dcm(v[:-1, :-1]).as_euler('XYZ'),
             'rotation_xyzw': Rot.from_dcm(v[:-1, :-1]).as_quat()
@@ -209,7 +209,7 @@ def create_pose_list(data, supervisor):
     })
 
 
-def encode_camera_info(data, supervisor):
+def encode_camera_info(data, controller):
     return jsonpickle.encode({
         'frame_id': data.header.frame_id,
         'height': data.height,
@@ -219,7 +219,7 @@ def encode_camera_info(data, supervisor):
     })
 
 
-def encode_color_image(data, supervisor):
+def encode_color_image(data, controller):
     return {
         'encoding':
             data.encoding,
@@ -228,11 +228,11 @@ def encode_color_image(data, supervisor):
     }
 
 
-def encode_depth_image(data, supervisor):
+def encode_depth_image(data, controller):
     return jsonpickle.encode(ros_numpy.numpify(data))
 
 
-def encode_laserscan(data, supervisor):
+def encode_laserscan(data, controller):
     return jsonpickle.encode({
         'scans':
             np.array([[
@@ -246,52 +246,52 @@ def encode_laserscan(data, supervisor):
     })
 
 
-def move_angle(data, publisher, supervisor):
+def move_angle(data, publisher, controller):
     # Derive a corresponding goal pose & send the robot there
     _move_to_pose(
         np.matmul(
-            _current_pose(supervisor),
+            _current_pose(controller),
             __transrpy_to_tf_matrix([0, 0, 0], [
                 0, 0,
                 __pi_wrap(np.deg2rad(__safe_dict_get(data, 'angle', 0)))
-            ])), publisher, supervisor)
+            ])), publisher, controller)
 
 
-def move_distance(data, publisher, supervisor):
+def move_distance(data, publisher, controller):
     # Derive a corresponding goal pose & send the robot there
     _move_to_pose(
         np.matmul(
-            _current_pose(supervisor),
+            _current_pose(controller),
             __transrpy_to_tf_matrix(
                 [__safe_dict_get(data, 'distance', 0), 0, 0], [0, 0, 0])),
-        publisher, supervisor)
+        publisher, controller)
 
 
-def move_next(data, publisher, supervisor):
+def move_next(data, publisher, controller):
     # Configure if this is our first step
-    if supervisor.environment_name is None:
-        supervisor.environment_name = (supervisor.config['environment_names'][
-            supervisor._robot('map_selection_number')['map_selection_number']])
-    if ('trajectory_pose_next' not in supervisor.environment_data[
-            supervisor.environment_name]):
-        supervisor.environment_data[
-            supervisor.environment_name]['trajectory_pose_next'] = 0
+    if controller.environment_name is None:
+        controller.environment_name = (controller.config['environment_names'][
+            controller._robot('map_selection_number')['map_selection_number']])
+    if ('trajectory_pose_next' not in controller.environment_data[
+            controller.environment_name]):
+        controller.environment_data[
+            controller.environment_name]['trajectory_pose_next'] = 0
 
     # Servo to the goal pose
     _move_to_pose(
         __pose_vector_to_tf_matrix(
             np.take(
                 np.fromstring(
-                    supervisor.environment_data[
-                        supervisor.environment_name]['trajectory_poses']
-                    [supervisor.environment_data[supervisor.environment_name]
+                    controller.environment_data[
+                        controller.environment_name]['trajectory_poses']
+                    [controller.environment_data[controller.environment_name]
                      ['trajectory_pose_next']].strip()[1:-1],
-                    sep=", "), [1, 2, 3, 0, 4, 5, 6])), publisher, supervisor)
+                    sep=", "), [1, 2, 3, 0, 4, 5, 6])), publisher, controller)
 
     # Register that we completed this goal
-    supervisor.environment_data[
-        supervisor.environment_name]['trajectory_pose_next'] += 1
-    if (supervisor.environment_data[supervisor.environment_name]
-        ['trajectory_pose_next'] >= len(supervisor.environment_data[
-            supervisor.environment_name]['trajectory_poses'])):
+    controller.environment_data[
+        controller.environment_name]['trajectory_pose_next'] += 1
+    if (controller.environment_data[controller.environment_name]
+        ['trajectory_pose_next'] >= len(controller.environment_data[
+            controller.environment_name]['trajectory_poses'])):
         rospy.logerr("You have run out of trajectory poses!")

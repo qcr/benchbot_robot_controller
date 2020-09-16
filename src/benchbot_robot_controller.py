@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import argparse
+import copy
 import flask
 from gevent import event, pywsgi, signal
 import importlib
@@ -9,6 +10,7 @@ import re
 import rospy
 import subprocess
 import sys
+import threading
 import traceback
 
 # What does the controller need to do:
@@ -241,7 +243,7 @@ class RobotController(object):
             # none anyway with an observation as we do not 'parameterise' an
             # observation)
             self.connections[connection_name]['condition'].acquire()
-            data = deepcopy(self.connections[connection_name]['data'])
+            data = copy.deepcopy(self.connections[connection_name]['data'])
             self.connections[connection_name]['condition'].release()
 
             return (data if
