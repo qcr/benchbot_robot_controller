@@ -5,6 +5,8 @@ import copy
 import flask
 from gevent import event, pywsgi, signal
 import importlib
+import jsonpickle
+import jsonpickle.ext.numpy as jet
 import os
 import re
 import rospy
@@ -13,6 +15,8 @@ import sys
 import tf2_ros
 import threading
 import traceback
+
+jet.register_handlers()
 
 # What does the controller need to do:
 
@@ -237,8 +241,6 @@ class RobotController(object):
         return getattr(importlib.import_module(x[0]), x[1])
 
     def _call_connection(self, connection_name, data=None):
-        print("CONNECTION: %s" % connection_name)
-        print(data)
         if (self.connections[connection_name]['type'] in [
                 CONN_ROS_TO_API, CONN_ROSCACHE_TO_API
         ]):
@@ -248,14 +250,6 @@ class RobotController(object):
             self.connections[connection_name]['condition'].acquire()
             data = copy.deepcopy(self.connections[connection_name]['data'])
             self.connections[connection_name]['condition'].release()
-
-            print("OBTAINED DATA:")
-            print(data)
-
-            print("TYPE OF CONNECTION RESULT:")
-            x = self.connections[connection_name]['callback_robot'](data, self)
-            print(x)
-            print(type(x))
 
             return (data if
                     self.connections[connection_name]['callback_robot'] is None
@@ -364,15 +358,10 @@ class RobotController(object):
                 rospy.logerr("Requested undefined connection: %s" % connection)
                 flask.abort(404)
             try:
-                x = self._call_connection(connection,
-                                          data=flask.request.get_data())
-                print(type(x))
-                print(type(flask.jsonify(_to_simple_dict(x))))
-                return flask.jsonify(_to_simple_dict(x))
-                # return flask.jsonify(
-                #     _to_simple_dict(
-                #         self._call_connection(connection,
-                #                               data=flask.request.get_data())))
+                return flask.jsonify(
+                    jsonpickle.encode(
+                        self._call_connection(connection,
+                                              data=flask.request.get_data())))
             except Exception as e:
                 rospy.logerr(
                     "Robot Controller failed on processing connection "

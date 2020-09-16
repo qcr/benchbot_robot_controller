@@ -1,7 +1,5 @@
 import base64
 import cv2
-import jsonpickle
-import jsonpickle.ext.numpy as jet
 import numpy as np
 import pprint
 import ros_numpy
@@ -9,8 +7,6 @@ import rospy
 from scipy.spatial.transform import Rotation as Rot
 
 from geometry_msgs.msg import Twist, Vector3
-
-jet.register_handlers()
 
 _MOVE_HZ = 20
 
@@ -199,41 +195,36 @@ def create_pose_list(data, controller):
                 controller.config['robot']['global_frame'], p, rospy.Time()))
         for p in controller.config['robot']['poses']
     }
-    return jsonpickle.encode({
+    return {
         'camera' if 'left_camera' in k else k: {
             'parent_frame': controller.config['robot']['global_frame'],
             'translation_xyz': v[:-1, -1],
             'rotation_rpy': Rot.from_dcm(v[:-1, :-1]).as_euler('XYZ'),
             'rotation_xyzw': Rot.from_dcm(v[:-1, :-1]).as_quat()
         } for k, v in tfs.items()
-    })
+    }
 
 
 def encode_camera_info(data, controller):
-    return jsonpickle.encode({
+    return {
         'frame_id': data.header.frame_id,
         'height': data.height,
         'width': data.width,
         'matrix_intrinsics': np.reshape(data.K, (3, 3)),
         'matrix_projection': np.reshape(data.P, (3, 4))
-    })
-
-
-def encode_color_image(data, controller):
-    return {
-        'encoding':
-            data.encoding,
-        'data':
-            base64.b64encode(cv2.imencode('.png', ros_numpy.numpify(data))[1])
     }
 
 
+def encode_color_image(data, controller):
+    return {'encoding': data.encoding, 'data': ros_numpy.numpify(data)}
+
+
 def encode_depth_image(data, controller):
-    return jsonpickle.encode(ros_numpy.numpify(data))
+    return ros_numpy.numpify(data)
 
 
 def encode_laserscan(data, controller):
-    return jsonpickle.encode({
+    return {
         'scans':
             np.array([[
                 data.ranges[i],
@@ -243,7 +234,7 @@ def encode_laserscan(data, controller):
             data.range_min,
         'range_max':
             data.range_max
-    })
+    }
 
 
 def move_angle(data, publisher, controller):
