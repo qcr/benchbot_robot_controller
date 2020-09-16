@@ -473,15 +473,3 @@ class RobotController(object):
     def stop(self):
         if self.instance is not None:
             self.instance.stop()
-
-
-if __name__ == "__main__":
-    # Parse the input arguments sanely
-    parser = argparse.ArgumentParser(
-        description="Controller for a BenchBot robot")
-    parser.add_argument('--port', type=int, required=True)
-    args = parser.parse_args()
-
-    # Use the controller to run & manage the real robot
-    rrc = RobotController(args.port)
-    rrc.run()
