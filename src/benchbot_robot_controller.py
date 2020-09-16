@@ -6,6 +6,7 @@ from gevent import event, pywsgi, signal
 import importlib
 import os
 import re
+import rospy
 import subprocess
 import sys
 import traceback
