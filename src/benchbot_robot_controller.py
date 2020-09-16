@@ -370,23 +370,19 @@ class RobotController(object):
 
         @robot_flask.route('/is_collided', methods=['GET'])
         def __is_collided():
-            return flask.jsonify({'is_collided': False})
-            # return flask.jsonify({'is_collided': self.instance.is_collided()})
+            return flask.jsonify({'is_collided': self.instance.is_collided()})
 
         @robot_flask.route('/is_dirty', methods=['GET'])
         def __is_dirty():
-            return flask.jsonify({'is_dirty': False})
-            # return flask.jsonify({'is_dirty': self.instance.is_dirty()})
+            return flask.jsonify({'is_dirty': self.instance.is_dirty()})
 
         @robot_flask.route('/is_running', methods=['GET'])
         def __is_running():
-            return flask.jsonify({'is_running': True})
-            # return flask.jsonify({'is_running': self.instance.is_running()})
+            return flask.jsonify({'is_running': self.instance.is_running()})
 
         @robot_flask.route('/map_selection_number', methods=['GET'])
         def __map_selection_number():
-            return flask.jsonify({'map_selection_number': 0})
-            # return flask.jsonify({'map_selection_number': self.map_selection})
+            return flask.jsonify({'map_selection_number': self.map_selection})
 
         @robot_flask.route('/next', methods=['GET'])
         def __next():
