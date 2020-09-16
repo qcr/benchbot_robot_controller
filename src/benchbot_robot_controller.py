@@ -212,8 +212,8 @@ class RobotController(object):
         self._tf_listener = tf2_ros.TransformListener(self.tf_buffer)
 
         self._auto_start = auto_start
-        self._instance = None
-        self._map_selection = None
+        self.instance = None
+        self.map_selection = None
 
     @staticmethod
     def _attempt_connection_imports(connection_data):
@@ -371,22 +371,22 @@ class RobotController(object):
         @robot_flask.route('/is_collided', methods=['GET'])
         def __is_collided():
             return flask.jsonify({'is_collided': False})
-            # return flask.jsonify({'is_collided': self._instance.is_collided()})
+            # return flask.jsonify({'is_collided': self.instance.is_collided()})
 
         @robot_flask.route('/is_dirty', methods=['GET'])
         def __is_dirty():
             return flask.jsonify({'is_dirty': False})
-            # return flask.jsonify({'is_dirty': self._instance.is_dirty()})
+            # return flask.jsonify({'is_dirty': self.instance.is_dirty()})
 
         @robot_flask.route('/is_running', methods=['GET'])
         def __is_running():
             return flask.jsonify({'is_running': True})
-            # return flask.jsonify({'is_running': self._instance.is_running()})
+            # return flask.jsonify({'is_running': self.instance.is_running()})
 
         @robot_flask.route('/map_selection_number', methods=['GET'])
         def __map_selection_number():
             return flask.jsonify({'map_selection_number': 0})
-            # return flask.jsonify({'map_selection_number': self._map_selection})
+            # return flask.jsonify({'map_selection_number': self.map_selection})
 
         @robot_flask.route('/next', methods=['GET'])
         def __next():
@@ -399,7 +399,7 @@ class RobotController(object):
             # Resets the simulator in the current scene
             try:
                 self.restart()
-                success = self._instance.is_running()
+                success = self.instance.is_running()
             except Exception as e:
                 print(e)
                 success = False
@@ -450,8 +450,8 @@ class RobotController(object):
             self.config[k].update(config[k])
 
         # Set map selection as lowest order by default
-        self._map_selection = min(self.config['environments'].items(),
-                                  key=lambda e: e[1]['order'])[0]
+        self.map_selection = min(self.config['environments'].items(),
+                                 key=lambda e: e[1]['order'])[0]
 
         # Register all of the required connections
         for k, v in self.config['robot']['connections'].items():
@@ -469,14 +469,14 @@ class RobotController(object):
         self.config_valid = True
 
     def start(self):
-        self._instance = ControllerInstance(
+        self.instance = ControllerInstance(
             self.config['robot'],
-            self.config['environments'][self._map_selection])
-        self._instance.start()
+            self.config['environments'][self.map_selection])
+        self.instance.start()
 
     def stop(self):
-        if self._instance is not None:
-            self._instance.stop()
+        if self.instance is not None:
+            self.instance.stop()
 
 
 if __name__ == "__main__":

@@ -131,7 +131,7 @@ def _move_to_angle(goal, publisher, controller):
     # Servo until orientation matches that of the requested goal
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while not controller._robot('is_collided')['is_collided']:
+    while not controller.instance.is_collided():
         # Get latest orientation error
         orientation_error = __yaw_b_wrt_a(_current_pose(controller), goal)
 
@@ -156,7 +156,7 @@ def _move_to_pose(goal, publisher, controller):
     # beta = angle between current yaw & desired yaw
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while not controller._robot('is_collided')['is_collided']:
+    while not controller.instance.is_collided():
         # Get latest position error
         current = _current_pose(controller)
         rho = __dist_from_a_to_b(current, goal)
@@ -261,8 +261,8 @@ def move_distance(data, publisher, controller):
 def move_next(data, publisher, controller):
     # Configure if this is our first step
     if controller.environment_name is None:
-        controller.environment_name = (controller.config['environment_names'][
-            controller._robot('map_selection_number')['map_selection_number']])
+        controller.environment_name = (
+            controller.config['environment_names'][controller.map_selection])
     if ('trajectory_pose_next' not in controller.environment_data[
             controller.environment_name]):
         controller.environment_data[
