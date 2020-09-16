@@ -217,12 +217,12 @@ class RobotController(object):
 
         callback_supervisor_fn = None
         if 'callback_supervisor' in connection_data:
-            callback_supervisor_fn = Supervisor._dynamic_callback_import(
+            callback_supervisor_fn = RobotController._dynamic_callback_import(
                 connection_data['callback_supervisor'])
 
         callback_caching_fn = None
         if 'callback_caching' in connection_data:
-            callback_caching_fn = Supervisor._dynamic_callback_import(
+            callback_caching_fn = RobotController._dynamic_callback_import(
                 connection_data['callback_caching'])
 
         return (topic_class, callback_supervisor_fn, callback_caching_fn)
@@ -275,7 +275,7 @@ class RobotController(object):
     def _register_connection(self, connection_name, connection_data):
         # Pull out imported components from the connection data
         topic_class, callback_supervisor_fn, callback_caching_fn = (
-            Supervisor._attempt_connection_imports(connection_data))
+            RobotController._attempt_connection_imports(connection_data))
 
         # Register the connection with the supervisor
         self.connections[connection_name] = {
