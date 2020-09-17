@@ -278,7 +278,8 @@ class RobotController(object):
 
     def _env_number(self, env_name):
         # NOTE assumes orders are sequential, starting from 0
-        return self.config['environments'][env_name]['order']
+        return (None if env_name is None else
+                self.config['environments'][env_name]['order'])
 
     def _generate_subscriber_callback(self, connection_name):
 
@@ -428,10 +429,13 @@ class RobotController(object):
 
         @robot_flask.route('/selected_env', methods=['GET'])
         def __selected_env():
-            return flask.jsonify({
-                'name': self.selected_env,
-                'number': self._env_number(self.selected_env)
-            })
+            try:
+                return flask.jsonify({
+                    'name': self.selected_env,
+                    'number': self._env_number(self.selected_env)
+                })
+            except Exception as e:
+                rospy.logerr(e)
 
         # Configure our server
         robot_server = pywsgi.WSGIServer(
