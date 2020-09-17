@@ -204,6 +204,8 @@ class RobotController(object):
     def __init__(self, port=10000, auto_start=True):
         self.robot_address = 'http://0.0.0.0:' + str(port)
 
+        self._auto_start = auto_start
+
         self.config = None
         self.config_valid = False
 
@@ -211,9 +213,8 @@ class RobotController(object):
         self.tf_buffer = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self.tf_buffer)
 
-        self._auto_start = auto_start
         self.instance = None
-        self.map_selection = None
+        self.selected_env = None
 
     @staticmethod
     def _attempt_connection_imports(connection_data):
@@ -265,6 +266,20 @@ class RobotController(object):
             print("UNIMPLEMENTED CONNECTION CALL: %s" %
                   self.connections[connection_name]['type'])
 
+    def _env_first(self):
+        return min(self.config['environments'].items(),
+                   key=lambda e: e[1]['order'])[0]
+
+    def _env_next(self):
+        return next(
+            (e[0] for e in self.config['environments'].items() if e[1]['order']
+             == self.config['environments'][self.selected_env]['order'] + 1),
+            None)
+
+    def _env_number(self, env_name):
+        # NOTE assumes orders are sequential, starting from 0
+        return self.config['environments'][env_name]['order']
+
     def _generate_subscriber_callback(self, connection_name):
 
         def __cb(data):
@@ -308,11 +323,6 @@ class RobotController(object):
             else:
                 print("UNIMPLEMENTED POST CONNECTION: %s" %
                       connection_data['connection'])
-
-    def next(self):
-        raise NotImplementedError(
-            "Support for moving to the next scene in an "
-            "experiment on a real robot is not yet implemented")
 
     def restart(self):
         # Restarts the robot by returning it to the starting point
@@ -380,30 +390,48 @@ class RobotController(object):
         def __is_running():
             return flask.jsonify({'is_running': self.instance.is_running()})
 
-        @robot_flask.route('/map_selection_number', methods=['GET'])
-        def __map_selection_number():
-            return flask.jsonify({'map_selection_number': self.map_selection})
-
         @robot_flask.route('/next', methods=['GET'])
         def __next():
-            raise NotImplementedError(
-                "Support for moving to the next scene in an "
-                "experiment on a real robot is not yet implemented")
+            try:
+                self.stop()
+                if self.selected_env is not None and self._env_next() is None:
+                    raise ValueError(
+                        "There is no next map; at the end of the list")
+                self.selected_env = (
+                    self._env_first() if self.selected_env is None or
+                    self._env_next() is None else self._env_next())
+                self.start()
+                success = True
+            except Exception as e:
+                rospy.logerr(e)
+                success = False
+            return flask.jsonify({'next_success': success})
 
         @robot_flask.route('/reset', methods=['GET'])
         def __reset():
-            # Resets the simulator in the current scene
+            # Resets the robot in the current scene
             try:
                 self.restart()
                 success = self.instance.is_running()
             except Exception as e:
-                print(e)
+                rospy.logerr(e)
                 success = False
             return flask.jsonify({'reset_success': success})
 
         @robot_flask.route('/restart', methods=['GET'])
         def __restart():
-            return __reset()
+            # Restarts the robot in the FIRST scene
+            self.selected_env = None
+            resp = __reset()
+            resp.data = resp.data.replace('reset', 'restart')
+            return resp
+
+        @robot_flask.route('/selected_env', methods=['GET'])
+        def __selected_env_name():
+            return flask.jsonify({
+                'name': self.selected_env,
+                'number': self._env_number(self.selected_env)
+            })
 
         # Configure our server
         robot_server = pywsgi.WSGIServer(
@@ -446,8 +474,7 @@ class RobotController(object):
             self.config[k].update(config[k])
 
         # Set map selection as lowest order by default
-        self.map_selection = min(self.config['environments'].items(),
-                                 key=lambda e: e[1]['order'])[0]
+        self.map_selection = self._env_first()
 
         # Register all of the required connections
         for k, v in self.config['robot']['connections'].items():
