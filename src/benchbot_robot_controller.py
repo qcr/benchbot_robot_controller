@@ -12,6 +12,7 @@ import re
 import rospy
 import subprocess
 import sys
+import time
 import tf2_ros
 import threading
 import traceback
@@ -79,6 +80,9 @@ CONN_ROS_TO_API = 'ros_to_api'
 CONN_ROSCACHE_TO_API = 'roscache_to_api'
 CONNS = [CONN_API_TO_ROS, CONN_ROS_TO_API, CONN_ROSCACHE_TO_API]
 
+TIMEOUT_ROS_PING = 0.5
+TIMEOUT_STARTUP = 90
+
 VARIABLES = {
     'ENVS_PATH': "os.path.dirname(self.config_env['path'])",
     'ISAAC_PATH': "os.environ['ISAAC_SDK_PATH']",
@@ -106,9 +110,11 @@ def _to_simple_dict(data):
 
 class ControllerInstance(object):
 
-    def __init__(self, config_robot, config_env):
+    def __init__(self, config_robot, config_env, ros_subs):
         self.config_robot = config_robot
         self.config_env = config_env
+
+        self.ros_subs = ros_subs
 
         self._cmds = None
         self._processes = None
@@ -132,9 +138,20 @@ class ControllerInstance(object):
                                  executable='/bin/bash').wait() == 0)
 
     def is_running(self):
-        # TODO do this properly with a list of topics sent as part of the
-        # config
-        return self._processes != None
+        if self.ros_subs is None:
+            return self._processes != None
+        else:
+            try:
+                for s in self.ros_subs:
+                    print(
+                        rospy.wait_for_message(
+                            s.resolved_name,
+                            s.data_class,
+                            timeout=TIMEOUT_ROS_PING).header)
+            except Exception as e:
+                rospy.logerr(e)
+                return False
+            return True
 
     def start(self):
         if self.is_running():
@@ -161,7 +178,30 @@ class ControllerInstance(object):
         ]
 
         # Wait until we move into a running state
-        # TODO
+        start_time = time.time()
+        while not self.is_running():
+            time.sleep(0.25)
+            fails = [False for p in self._processes]
+            if any(fails):
+                i = fails.index(True)
+                print("\nTHE FOLLOWING PROCESS STARTED BY THE FOLLOWING "
+                      "COMMAND HAS CRASHED:")
+                print("\t%s" % self._cmds[i])
+                print("\nDUMPING LOGGED OUTPUT:")
+                with open(os.path.join(self.config_robot['logs_dir'], str(i)),
+                          'r') as f:
+                    print(f.read())
+            elif time.time() - start_time > TIMEOUT_STARTUP:
+                print("\nROBOT WAS NOT DETECTED TO BE RUNNING AFTER %ss (no "
+                      "data on ROS TOPICS). DUMPING LOGS FOR ALL COMMANDS...")
+                for i, c in enumerate(self._cmds):
+                    print("COMMAND:")
+                    print("\t%s" % self._cmds[i])
+                    print("OUTPUT:")
+                    with open(
+                            os.path.join(self.config_robot['logs_dir'],
+                                         str(i)), 'r') as f:
+                        print(f.read())
         return True
 
     def start_logging(self):
@@ -194,9 +234,13 @@ class ControllerInstance(object):
                              shell=True,
                              executable='/bin/bash').wait()
 
+        # Wait until controller instance is detected as not running
+        while self.is_running():
+            time.sleep(0.25)
+
     def stop_logging(self):
-        # TODO
-        pass
+        for f in self._log_files:
+            f.close()
 
 
 class RobotController(object):
@@ -393,7 +437,11 @@ class RobotController(object):
 
         @robot_flask.route('/is_running', methods=['GET'])
         def __is_running():
-            return flask.jsonify({'is_running': self.instance.is_running()})
+            try:
+                return flask.jsonify(
+                    {'is_running': self.instance.is_running()})
+            except Exception as e:
+                rospy.logerr(e)
 
         @robot_flask.route('/next', methods=['GET'])
         def __next():
@@ -502,7 +550,11 @@ class RobotController(object):
     def start(self):
         self.instance = ControllerInstance(
             self.config['robot'],
-            self.config['environments'][self.selected_env])
+            self.config['environments'][self.selected_env], [
+                c['ros']
+                for c in self.connections.values()
+                if c['type'] == CONN_ROS_TO_API and c['ros'] != None
+            ])
         self.instance.start()
 
     def stop(self):
