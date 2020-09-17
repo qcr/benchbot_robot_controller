@@ -387,6 +387,10 @@ class RobotController(object):
         def __is_dirty():
             return flask.jsonify({'is_dirty': self.instance.is_dirty()})
 
+        @robot_flask.route('/is_finished', methods=['GET'])
+        def __is_finished():
+            return flask.jsonify({'is_finished': False})
+
         @robot_flask.route('/is_running', methods=['GET'])
         def __is_running():
             return flask.jsonify({'is_running': self.instance.is_running()})
