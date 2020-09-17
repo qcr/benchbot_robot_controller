@@ -481,8 +481,8 @@ class RobotController(object):
         for k in self.config:
             self.config[k].update(config[k])
 
-        # Set map selection as lowest order by default
-        self.map_selection = self._env_first()
+        # Set selected environment as first by default
+        self.selected_env = self._env_first()
 
         # Register all of the required connections
         for k, v in self.config['robot']['connections'].items():
@@ -502,7 +502,7 @@ class RobotController(object):
     def start(self):
         self.instance = ControllerInstance(
             self.config['robot'],
-            self.config['environments'][self.map_selection])
+            self.config['environments'][self.selected_env])
         self.instance.start()
 
     def stop(self):
