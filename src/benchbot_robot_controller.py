@@ -554,6 +554,7 @@ class RobotController(object):
         self.config_valid = True
 
     def start(self):
+        self.state = {}
         self.instance = ControllerInstance(
             self.config['robot'],
             self.config['environments'][self.selected_env], [
