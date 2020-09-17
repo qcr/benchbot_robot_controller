@@ -250,6 +250,8 @@ def move_angle(data, publisher, controller):
 
 def move_distance(data, publisher, controller):
     # Derive a corresponding goal pose & send the robot there
+    print("DISTANCE: %f" % __safe_dict_get(data, 'distance', 0))
+    print(type(data))
     _move_to_pose(
         np.matmul(
             _current_pose(controller),

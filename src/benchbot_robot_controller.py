@@ -372,7 +372,7 @@ class RobotController(object):
                 return flask.jsonify(
                     jsonpickle.encode(
                         self._call_connection(connection,
-                                              data=flask.request.get_data())))
+                                              data=flask.request.get_json())))
             except Exception as e:
                 rospy.logerr(
                     "Robot Controller failed on processing connection "
