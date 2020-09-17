@@ -427,7 +427,7 @@ class RobotController(object):
             return resp
 
         @robot_flask.route('/selected_env', methods=['GET'])
-        def __selected_env_name():
+        def __selected_env():
             return flask.jsonify({
                 'name': self.selected_env,
                 'number': self._env_number(self.selected_env)
