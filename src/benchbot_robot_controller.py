@@ -434,7 +434,12 @@ class RobotController(object):
 
         @robot_flask.route('/is_finished', methods=['GET'])
         def __is_finished():
-            return flask.jsonify({'is_finished': False})
+            return flask.jsonify({
+                'is_finished':
+                    (False if 'trajectory_pose_next' not in self.state else
+                     self.state['trajectory_pose_next'] >= len(
+                         self.state['trajectory_poses']))
+            })
 
         @robot_flask.route('/is_running', methods=['GET'])
         def __is_running():
