@@ -260,29 +260,22 @@ def move_distance(data, publisher, controller):
 
 def move_next(data, publisher, controller):
     # Configure if this is our first step
-    if controller.environment_name is None:
-        controller.environment_name = (
-            controller.config['environment_names'][controller.map_selection])
-    if ('trajectory_pose_next' not in controller.environment_data[
-            controller.environment_name]):
-        controller.environment_data[
-            controller.environment_name]['trajectory_pose_next'] = 0
+    if ('trajectory_pose_next' not in controller.state):
+        controller.state['trajectory_pose_next'] = 0
+        controller.state['trajectory_poses'] = controller.config[
+            'environments'][controller.selected_env]['trajectory_poses']
 
     # Servo to the goal pose
     _move_to_pose(
         __pose_vector_to_tf_matrix(
             np.take(
-                np.fromstring(
-                    controller.environment_data[
-                        controller.environment_name]['trajectory_poses']
-                    [controller.environment_data[controller.environment_name]
-                     ['trajectory_pose_next']].strip()[1:-1],
-                    sep=", "), [1, 2, 3, 0, 4, 5, 6])), publisher, controller)
+                np.fromstring(controller.state['trajectory_poses'][
+                    controller.state['trajectory_pose_next']].strip()[1:-1],
+                              sep=", "), [1, 2, 3, 0, 4, 5, 6])), publisher,
+        controller)
 
     # Register that we completed this goal
-    controller.environment_data[
-        controller.environment_name]['trajectory_pose_next'] += 1
-    if (controller.environment_data[controller.environment_name]
-        ['trajectory_pose_next'] >= len(controller.environment_data[
-            controller.environment_name]['trajectory_poses'])):
+    controller.state['trajectory_pose_next'] += 1
+    if (controller.state['trajectory_pose_next'] >= len(
+            controller.state['trajectory_poses'])):
         rospy.logerr("You have run out of trajectory poses!")
