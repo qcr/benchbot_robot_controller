@@ -2,7 +2,7 @@
 
 # BenchBot Robot Controller
 
-TODO feature image
+![benchbot_robot_controller](./docs/benchbot_controller.jpg)
 
 The BenchBot Robot Controller is the layer of the BenchBot software stack that handles all direct interactions with the underlying robot platform. It is designed to be run directly on the robot platform, whether that is a real robot or on the same host as a simulator. This allows optimal performance for tight control loops in actuation, like those used for moving the robot between poses. It also significantly simplifies the [BenchBot Supervisor](https://github.com/roboticvisionorg/benchbot_supervisor), allowing it to focus solely on HTTP communications & configurations without the burden of ROS.
 
