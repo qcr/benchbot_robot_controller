@@ -382,8 +382,7 @@ class RobotController(object):
 
         @robot_flask.route('/', methods=['GET'])
         def __hello():
-            return flask.jsonify(
-                "Hello, I am the BenchBot real robot controller")
+            return flask.jsonify("Hello, I am the BenchBot robot controller")
 
         @robot_flask.route('/config/', methods=['GET'])
         def __config_full():
