@@ -1,5 +1,7 @@
 flask
 gevent
 jsonpickle
-requests
+numpy
 pyyaml
+requests
+scipy

@@ -1,5 +1,4 @@
 import base64
-import cv2
 import numpy as np
 import pprint
 import ros_numpy
