@@ -85,9 +85,9 @@ TIMEOUT_STARTUP = 90
 
 VARIABLES = {
     'ENVS_PATH': "os.path.dirname(self.config_env['path'])",
-    'ISAAC_PATH': "os.environ['ISAAC_SDK_PATH']",
+    'ISAAC_PATH': "os.environ.get('ISAAC_SDK_PATH', '')",
     'MAP_PATH': "self.config_env['map_path']",
-    'SIM_PATH': "os.environ['BENCHBOT_SIMULATOR_PATH']",
+    'SIM_PATH': "os.environ.get('BENCHBOT_SIMULATOR_PATH', '')",
     'START_POSE': "self.config_env['start_pose_local']"
 }
 
@@ -126,16 +126,18 @@ class ControllerInstance(object):
         return text
 
     def is_collided(self):
-        return (subprocess.Popen(_CMD_FILE_EXISTS.replace(
-            '$FILENAME', self.config_robot['file_collisions']),
-                                 shell=True,
-                                 executable='/bin/bash').wait() == 0)
+        return (subprocess.Popen(
+            _CMD_FILE_EXISTS.replace('$FILENAME',
+                                     self.config_robot['file_collisions']),
+            shell=True,
+            executable='/bin/bash').wait() == 0)
 
     def is_dirty(self):
-        return (subprocess.Popen(_CMD_FILE_EXISTS.replace(
-            '$FILENAME', self.config_robot['file_dirty_state']),
-                                 shell=True,
-                                 executable='/bin/bash').wait() == 0)
+        return (subprocess.Popen(
+            _CMD_FILE_EXISTS.replace('$FILENAME',
+                                     self.config_robot['file_dirty_state']),
+            shell=True,
+            executable='/bin/bash').wait() == 0)
 
     def is_running(self):
         if self.ros_subs is None:
@@ -143,11 +145,10 @@ class ControllerInstance(object):
         else:
             try:
                 for s in self.ros_subs:
-                    print(
-                        rospy.wait_for_message(
-                            s.resolved_name,
-                            s.data_class,
-                            timeout=TIMEOUT_ROS_PING).header)
+                    print(rospy.wait_for_message(
+                        s.resolved_name,
+                        s.data_class,
+                        timeout=TIMEOUT_ROS_PING).header)
             except Exception as e:
                 rospy.logerr(e)
                 return False
@@ -168,12 +169,13 @@ class ControllerInstance(object):
         # the lifecycle
         self.start_logging()
         self._processes = [
-            subprocess.Popen(c,
-                             shell=True,
-                             executable='/bin/bash',
-                             stdout=l,
-                             stderr=l,
-                             preexec_fn=os.setsid)
+            subprocess.Popen(
+                c,
+                shell=True,
+                executable='/bin/bash',
+                stdout=l,
+                stderr=l,
+                preexec_fn=os.setsid)
             for c, l in zip(self._cmds, self._log_files)
         ]
 
@@ -188,8 +190,9 @@ class ControllerInstance(object):
                       "COMMAND HAS CRASHED:")
                 print("\t%s" % self._cmds[i])
                 print("\nDUMPING LOGGED OUTPUT:")
-                with open(os.path.join(self.config_robot['logs_dir'], str(i)),
-                          'r') as f:
+                with open(
+                        os.path.join(self.config_robot['logs_dir'], str(i)),
+                        'r') as f:
                     print(f.read())
             elif time.time() - start_time > TIMEOUT_STARTUP:
                 print("\nROBOT WAS NOT DETECTED TO BE RUNNING AFTER %ss (no "
@@ -230,9 +233,10 @@ class ControllerInstance(object):
                 self.config_robot['file_collisions'],
                 self.config_robot['file_dirty_state']
         ]:
-            subprocess.Popen(_CMD_DELETE_FILE.replace('$FILENAME', f),
-                             shell=True,
-                             executable='/bin/bash').wait()
+            subprocess.Popen(
+                _CMD_DELETE_FILE.replace('$FILENAME', f),
+                shell=True,
+                executable='/bin/bash').wait()
 
         # Wait until controller instance is detected as not running
         while self.is_running():
@@ -266,8 +270,8 @@ class RobotController(object):
         topic_class = None
         if 'ros_type' in connection_data:
             x = connection_data['ros_type'].split('/')
-            topic_class = getattr(importlib.import_module('%s.msg' % x[0]),
-                                  x[1])
+            topic_class = getattr(
+                importlib.import_module('%s.msg' % x[0]), x[1])
 
         callback_robot_fn = None
         if 'callback_robot' in connection_data:
@@ -312,8 +316,9 @@ class RobotController(object):
                   self.connections[connection_name]['type'])
 
     def _env_first(self):
-        return min(self.config['environments'].items(),
-                   key=lambda e: e[1]['order'])[0]
+        return min(
+            self.config['environments'].items(),
+            key=lambda e: e[1]['order'])[0]
 
     def _env_next(self):
         return next(
@@ -405,8 +410,8 @@ class RobotController(object):
                 raise (e)
             return flask.jsonify({'configuration_valid': self.config_valid})
 
-        @robot_flask.route('/connections/<connection>',
-                           methods=['GET', 'POST'])
+        @robot_flask.route(
+            '/connections/<connection>', methods=['GET', 'POST'])
         def __connection(connection):
             # Handle all connection calls (typically sent via the supervisor)
             if connection not in self.config['robot']['connections']:
@@ -415,8 +420,8 @@ class RobotController(object):
             try:
                 return flask.jsonify(
                     jsonpickle.encode(
-                        self._call_connection(connection,
-                                              data=flask.request.get_json())))
+                        self._call_connection(
+                            connection, data=flask.request.get_json())))
             except Exception as e:
                 rospy.logerr(
                     "Robot Controller failed on processing connection "
@@ -434,17 +439,18 @@ class RobotController(object):
         @robot_flask.route('/is_finished', methods=['GET'])
         def __is_finished():
             return flask.jsonify({
-                'is_finished':
-                    (False if 'trajectory_pose_next' not in self.state else
-                     self.state['trajectory_pose_next'] >= len(
-                         self.state['trajectory_poses']))
+                'is_finished': (False
+                                if 'trajectory_pose_next' not in self.state
+                                else self.state['trajectory_pose_next'] >= len(
+                                    self.state['trajectory_poses']))
             })
 
         @robot_flask.route('/is_running', methods=['GET'])
         def __is_running():
             try:
-                return flask.jsonify(
-                    {'is_running': self.instance.is_running()})
+                return flask.jsonify({
+                    'is_running': self.instance.is_running()
+                })
             except Exception as e:
                 rospy.logerr(e)
 
@@ -455,9 +461,10 @@ class RobotController(object):
                 if self.selected_env is not None and self._env_next() is None:
                     raise ValueError(
                         "There is no next map; at the end of the list")
-                self.selected_env = (
-                    self._env_first() if self.selected_env is None or
-                    self._env_next() is None else self._env_next())
+                self.selected_env = (self._env_first()
+                                     if self.selected_env is None or
+                                     self._env_next() is None else
+                                     self._env_next())
                 self.start()
                 success = True
             except Exception as e:
@@ -488,8 +495,10 @@ class RobotController(object):
         def __selected_env():
             try:
                 return flask.jsonify({
-                    'name': self.selected_env,
-                    'number': self._env_number(self.selected_env)
+                    'name':
+                    self.selected_env,
+                    'number':
+                    self._env_number(self.selected_env)
                 })
             except Exception as e:
                 rospy.logerr(e)
@@ -512,8 +521,8 @@ class RobotController(object):
                 break
 
             if self._auto_start and self.config_valid:
-                print("Starting the requested real robot ROS stack ... ",
-                      end="")
+                print(
+                    "Starting the requested real robot ROS stack ... ", end="")
                 sys.stdout.flush()
                 self.start()
                 print("Done")
@@ -542,10 +551,10 @@ class RobotController(object):
             if 'connection' in v and v['connection'] in CONNS:
                 self._register_connection(k, v)
             else:
-                raise ValueError(
-                    "Robot connection definition '%s' has "
-                    "unsupported connection type: %s" %
-                    (k, v['connection'] if 'connection' in v else None))
+                raise ValueError("Robot connection definition '%s' has "
+                                 "unsupported connection type: %s" %
+                                 (k, v['connection']
+                                  if 'connection' in v else None))
 
         # Update verdict on whether config is valid (things like auto_start may
         # be waiting for a valid config)
