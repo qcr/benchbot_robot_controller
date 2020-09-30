@@ -145,12 +145,11 @@ class ControllerInstance(object):
         else:
             try:
                 for s in self.ros_subs:
-                    print(rospy.wait_for_message(
+                    rospy.wait_for_message(
                         s.resolved_name,
                         s.data_class,
-                        timeout=TIMEOUT_ROS_PING).header)
+                        timeout=TIMEOUT_ROS_PING)
             except Exception as e:
-                rospy.logerr(e)
                 return False
             return True
 
@@ -183,7 +182,7 @@ class ControllerInstance(object):
         start_time = time.time()
         while not self.is_running():
             time.sleep(0.25)
-            fails = [False for p in self._processes]
+            fails = [p.poll is not None for p in self._processes]
             if any(fails):
                 i = fails.index(True)
                 print("\nTHE FOLLOWING PROCESS STARTED BY THE FOLLOWING "
@@ -194,9 +193,11 @@ class ControllerInstance(object):
                         os.path.join(self.config_robot['logs_dir'], str(i)),
                         'r') as f:
                     print(f.read())
+                return False
             elif time.time() - start_time > TIMEOUT_STARTUP:
                 print("\nROBOT WAS NOT DETECTED TO BE RUNNING AFTER %ss (no "
-                      "data on ROS TOPICS). DUMPING LOGS FOR ALL COMMANDS...")
+                      "data on ROS TOPICS). DUMPING LOGS FOR ALL COMMANDS..." %
+                      TIMEOUT_STARTUP)
                 for i, c in enumerate(self._cmds):
                     print("COMMAND:")
                     print("\t%s" % self._cmds[i])
@@ -205,6 +206,7 @@ class ControllerInstance(object):
                             os.path.join(self.config_robot['logs_dir'],
                                          str(i)), 'r') as f:
                         print(f.read())
+                return False
         return True
 
     def start_logging(self):
