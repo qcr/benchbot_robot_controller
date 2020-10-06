@@ -7,6 +7,8 @@ from scipy.spatial.transform import Rotation as Rot
 
 from geometry_msgs.msg import Twist, Vector3
 
+_DEFAULT_SPEED_FACTOR = 1
+
 _MOVE_HZ = 20
 
 _MOVE_TOL_DIST = 0.01
@@ -17,9 +19,6 @@ _MOVE_ANGLE_K = 3
 _MOVE_POSE_K_RHO = 1.5
 _MOVE_POSE_K_ALPHA = 7.5
 _MOVE_POSE_K_BETA = -3
-
-# TODO move this into robot controller
-_MOVE_SPEED_FACTOR = 1
 
 
 def __ang_to_b(matrix_a, matrix_b):
@@ -47,8 +46,8 @@ def __pi_wrap(angle):
 def __pose_vector_to_tf_matrix(pv):
     # Expected format is [x,y,z,w,X,Y,Z]
     return np.vstack((np.hstack((Rot.from_quat(pv[0:4]).as_dcm(),
-                                 np.array(pv[4:]).reshape(3,
-                                                          1))), [0, 0, 0, 1]))
+                                 np.array(pv[4:]).reshape(3, 1))),
+                      [0, 0, 0, 1]))
 
 
 def __safe_dict_get(d, key, default):
@@ -98,8 +97,8 @@ def _debug_move(data, publisher, controller):
     # - Uses 0 rotation & translation if values are missing
     def print_pose(pose):
         rpy = Rot.from_dcm(pose[0:3, 0:3]).as_euler('XYZ', degrees=True)
-        return ("rpy: %f, %f, %f  xyz: %f, %f, %f" %
-                tuple(np.hstack((rpy, pose[0:3, 3].transpose()))))
+        return ("rpy: %f, %f, %f  xyz: %f, %f, %f" % tuple(
+            np.hstack((rpy, pose[0:3, 3].transpose()))))
 
     pose_a = _current_pose(controller)
     print("STARTING @ POSE: %s" % print_pose(pose_a))
@@ -110,12 +109,12 @@ def _debug_move(data, publisher, controller):
                          __safe_dict_get(data, 'rot_xyzw', [0, 0, 0, 1]) +
                          __safe_dict_get(data, 'trans_xyz', [0, 0, 0])))
     print("GOAL POSE (RELATIVE): %s" % print_pose(relative_pose))
-    print("GOAL POSE (ABSOLUTE): %s" %
-          print_pose(np.matmul(pose_a, relative_pose)))
+    print("GOAL POSE (ABSOLUTE): %s" % print_pose(
+        np.matmul(pose_a, relative_pose)))
     _move_to_pose(np.matmul(pose_a, relative_pose), publisher, controller)
     pose_b = _current_pose(controller)
-    print("FINAL POSE (RELATIVE): %s" %
-          print_pose(__tr_b_wrt_a(pose_a, pose_b)))
+    print(
+        "FINAL POSE (RELATIVE): %s" % print_pose(__tr_b_wrt_a(pose_a, pose_b)))
     print("FINAL POSE (ABSOLUTE): %s" % print_pose(pose_b))
 
 
@@ -124,6 +123,12 @@ def _current_pose(controller):
         controller.tf_buffer.lookup_transform(
             controller.config['robot']['global_frame'],
             controller.config['robot']['robot_frame'], rospy.Time()))
+
+
+def _move_speed_factor(controller):
+    return (controller.config['robot']['speed_factor']
+            if 'speed_factor' in controller.config['robot'] else
+            _DEFAULT_SPEED_FACTOR)
 
 
 def _move_to_angle(goal, publisher, controller):
@@ -139,8 +144,8 @@ def _move_to_angle(goal, publisher, controller):
             break
 
         # Construct & send velocity msg
-        vel_msg.angular.z = (_MOVE_SPEED_FACTOR * _MOVE_ANGLE_K *
-                             orientation_error)
+        vel_msg.angular.z = (
+            _move_speed_factor(controller) * _MOVE_ANGLE_K * orientation_error)
         publisher.publish(vel_msg)
         hz_rate.sleep()
     publisher.publish(Twist())
@@ -172,15 +177,17 @@ def _move_to_pose(goal, publisher, controller):
         # If within distance tolerance, correct angle & quit (the controller
         # aims to drive the robot in at the correct angle, if it is already
         # "in" but the angle is wrong, it will get stuck!)
+        print("rho: %f, alpha: %f, beta: %f, back: %d" % (rho, alpha, beta,
+                                                          backwards))
         if rho < _MOVE_TOL_DIST:
             _move_to_angle(goal, publisher, controller)
             break
 
         # Construct & send velocity msg
-        vel_msg.linear.x = (_MOVE_SPEED_FACTOR * (-1 if backwards else 1) *
-                            _MOVE_POSE_K_RHO * rho)
-        vel_msg.angular.z = _MOVE_SPEED_FACTOR * (_MOVE_POSE_K_ALPHA * alpha +
-                                                  _MOVE_POSE_K_BETA * beta)
+        vel_msg.linear.x = (_move_speed_factor(controller) *
+                            (-1 if backwards else 1) * _MOVE_POSE_K_RHO * rho)
+        vel_msg.angular.z = _move_speed_factor(controller) * (
+            _MOVE_POSE_K_ALPHA * alpha + _MOVE_POSE_K_BETA * beta)
         publisher.publish(vel_msg)
         hz_rate.sleep()
     publisher.publish(Twist())
@@ -225,14 +232,14 @@ def encode_depth_image(data, controller):
 def encode_laserscan(data, controller):
     return {
         'scans':
-            np.array([[
-                data.ranges[i],
-                __pi_wrap(data.angle_min + i * data.angle_increment)
-            ] for i in range(0, len(data.ranges))]),
+        np.array([[
+            data.ranges[i],
+            __pi_wrap(data.angle_min + i * data.angle_increment)
+        ] for i in range(0, len(data.ranges))]),
         'range_min':
-            data.range_min,
+        data.range_min,
         'range_max':
-            data.range_max
+        data.range_max
     }
 
 
@@ -268,10 +275,10 @@ def move_next(data, publisher, controller):
     _move_to_pose(
         __pose_vector_to_tf_matrix(
             np.take(
-                np.fromstring(controller.state['trajectory_poses'][
-                    controller.state['trajectory_pose_next']].strip()[1:-1],
-                              sep=", "), [1, 2, 3, 0, 4, 5, 6])), publisher,
-        controller)
+                np.fromstring(
+                    controller.state['trajectory_poses'][controller.state[
+                        'trajectory_pose_next']].strip()[1:-1],
+                    sep=", "), [1, 2, 3, 0, 4, 5, 6])), publisher, controller)
 
     # Register that we completed this goal
     controller.state['trajectory_pose_next'] += 1
