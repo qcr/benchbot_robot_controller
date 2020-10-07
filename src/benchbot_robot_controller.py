@@ -182,10 +182,10 @@ class ControllerInstance(object):
         start_time = time.time()
         while not self.is_running():
             time.sleep(0.25)
-            fails = [p.poll is not None for p in self._processes]
+            fails = [p.poll() is not None for p in self._processes]
             if any(fails):
                 i = fails.index(True)
-                print("\nTHE FOLLOWING PROCESS STARTED BY THE FOLLOWING "
+                print("\nTHE PROCESS STARTED BY THE FOLLOWING "
                       "COMMAND HAS CRASHED:")
                 print("\t%s" % self._cmds[i])
                 print("\nDUMPING LOGGED OUTPUT:")
