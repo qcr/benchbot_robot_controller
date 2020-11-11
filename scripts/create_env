@@ -3,43 +3,231 @@
 from __future__ import print_function
 
 from colorama import init, Fore
+import datetime
+from geometry_msgs.msg import Pose
+import numpy as np
+import rosbag
 import rospy
+import tf
 import tf2_ros
 import sys
+from time import sleep
+import select
+
+try:
+    input = raw_input
+except NameError:
+    pass
+
+DEFAULT_FRAME_GLOBAL = 'map'
+DEFAULT_FRAME_ODOM = 'odom'
+DEFAULT_FRAME_ROBOT = 'base_link'
+
+DEFAULT_TRAJ_BAG = None
+DEFAULT_TRAJ_FILTER_FN = 'dist > 0.1 or ang > 20'
+DEFAULT_TRAJ_HZ = 10
+DEFAULT_TRAJ_TOPIC = '/benchbot_trajectory'
+
+_DEFAULT_TRAJ_SAVE_LOCATION = (
+    "./benchbot_trajectory_%s.bag" %
+    datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S'))
 
 STRING_WELCOME = """
 Welcome to the BenchBot Real World Environment Builder. This script will help
 you create an environment definition file in the format BenchBot requires, for
 your own real robot platform & environment.
 
+Arguments are expected as ROS params, so please make sure you run this script
+through ROS (i.e. rosrun benchbot_robot_controller create_env _arg:=value). All
+args are optional as they have sane defaults. Supported args:
+
+    frame_global
+        frame everything is with respect to (default: '%s').
+
+    frame_odom
+        frame robot's odometry is reported in. A ground truth system is
+        expected to publish the transform from 'frame_global' to this frame
+        (default: '%s').
+
+    frame_robot
+        frame denoting robot's position in the world (default: '%s').
+
+    traj_bag
+        use this ROS bag for trajectory data rather than recording a new one
+        (default: '%s').
+
+    traj_filter_fn
+        a string representing a filter function given the variables 'dist'
+        (distance between pose & previous used pose), 'ang' (yaw angle in
+        DEGREES between pose & previous used pose), & 'delta' (number of poses
+        that have been skipped). The string will be run through 'eval'
+        (default: '%s')
+
+    traj_hz
+        frequency in Hz to record poses along the trajectory (default: %f).
+
+    traj_topic
+        topic to write poses to, or read them from (default: '%s')
+
 Please ensure you have the following before creating an environment file:
     - A space where you intend to run repeatable experiments
     - A real robot platform capable of running ROS
-    - A ground truth system that publishes the 'map' to 'odom' transform in ROS
-"""
+    - A ground truth map of the environment (see our 'create_env_map' script)
+    - A ground truth system that publishes the 'frame_global' to 'frame_odom'
+      transform in ROS
 
-if __name__ == "__main__":
-    # Handle arguments
+Press ENTER to begin
+""" % (DEFAULT_FRAME_GLOBAL, DEFAULT_FRAME_ODOM, DEFAULT_FRAME_ROBOT,
+       DEFAULT_TRAJECTORY_BAG, DEFAULT_TRAJ_FILTER_FN, DEFAULT_TRAJECTORY_HZ,
+       DEFAULT_TRAJECTORY_TOPIC)
 
-    # Print information string
-    init(autoreset=True)
-    print(STRING_WELCOME)
+_tf_buff = None
+_tf_list = None
 
-    # Ensure everything we require is running / setup
-    print("Creating a ROS node ... ")
-    rospy.init_node('benchbot_environment_creator')
-    print("\t%sDone.\n" % Fore.GREEN)
-    print("Checking 'map' to 'odom' transform is being published ... ")
+
+def calc_dist(pose_a, pose_b):
+    return np.linalg.norm(
+        np.array([pose_a.position.x, pose_a.position_y]) -
+        np.array([pose_b.position.x, pose_b.position.y]))
+
+
+def calc_yaw(pose_a, pose_b):
+    return tf.transformations.euler_from_matrix(
+        np.matmul(
+            tf.transformations.inverse_matrix(
+                tf.transformations.quaternion_matrix([
+                    pose_a.quaternion.x, pose_a.quaternion.y,
+                    pose_a.quaternion.z, pose_a.quaternion.w
+                ])) * tf.transformations.quaternion_matrix([
+                    pose_b.quaternion.x, pose_b.quaternion.y,
+                    pose_b.quaternion.z, pose_b.quaternion.w
+                ])))[2]
+
+
+def check_for_tf(frame_a, frame_b):
+    print("Checking '%s' to '%s' transform is being published ... " %
+          (frame_a, frame_b))
     try:
-        tf_buff = tf2_ros.Buffer()
-        tf_list = tf2_ros.TransformListener(tf_buff)
-        tf_buff.lookup_transform('odom', 'map', 0, rospy.Duration(3))
+        get_pose(frame_a, frame_b)
     except Exception as e:
         print("\t%sERROR: failed to find a current transform from "
-              "'map' to 'odom'. Exception:\n\t%s'" % (Fore.RED, e))
+              "'%s' to '%s'. Exception:\n\t%s'" % (Fore.RED, frame_a, frame_b,
+                                                   e))
         sys.exit(1)
     print("\t%sDone.\n" % Fore.GREEN)
 
-    # Hand off to the main environment building process
 
-    # Dump environment data to file
+def euler_from_quat_msg(msg):
+    return tf.transformations.euler_from_quaternion(
+        [msg.x, msg.y, msg.z, msg.w])
+
+
+def get_pose(frame_a, frame_b):
+    if _tf_buff is None:
+        setup_tf()
+    t = tf_buff.lookup_transform(frame_a, frame_b, 0, rospy.Duration(1))
+    return Pose(
+        position=t.transform.translation, orientation=t.transform.rotation)
+
+
+def setup_tf():
+    tf_buff = tf2_ros.Buffer()
+    tf_list = tf2_ros.TransformListener(tf_buff)
+
+
+if __name__ == "__main__":
+    # Print information string
+    init(autoreset=True)
+    input(STRING_WELCOME)
+
+    # Ensure everything we require is running / setup
+    print("%sINITIAL SANITY CHECKS:" % Fore.BLUE)
+    print("Creating a ROS node ... ")
+    rospy.init_node('benchbot_environment_creator')
+    frame_global = rospy.get_param('frame_global', DEFAULT_FRAME_GLOBAL)
+    frame_odom = rospy.get_param('frame_odom', DEFAULT_FRAME_ODOM)
+    frame_robot = rospy.get_param('frame_robot', DEFAULT_FRAME_ROBOT)
+    traj_bag = rospy.get_param('traj_bag', DEFAULT_TRAJ_BAG)
+    traj_hz = rospy.get_param('traj_hz', DEFAULT_TRAJ_HZ)
+    traj_topic = rospy.get_param('traj_topic', DEFAULT_TRAJ_TOPIC)
+    print("\t%sDone.\n" % Fore.GREEN)
+
+    check_for_tf(frame_global, frame_odom)
+    check_for_tf(frame_odom, frame_robot)
+
+    # Manually build a trajectory if required
+    print("%sTRAJECTORY BUILDING PROCESS:" % Fore.BLUE)
+    if traj_bag is None:
+        print("No trajectory ROS bag provided. Building a new one from "
+              "scratch.")
+        print("\nPlease move the robot to the desired trajectory start "
+              "position, and press ENTER when\ndone. The robot's current "
+              "position is:")
+        i = None
+        while not i:
+            i, _, _ = select.select([sys.stdin], [], [], 0)
+            p = get_pose(frame_global, frame_robot)
+            e = euler_from_quat_msg(p.orientation)
+            print("\tPosition (x,y,z): (%f, %f, %f) Orientation (r,p,y): "
+                  "(%f, %f, %f)" % (p.position.x, p.position.y, p.position.z,
+                                    e[0], e[1], e[2]))
+            sleep(0.25)
+        sys.stdin.readline()
+        print("\nRecording poses with the following settings:"
+              "\n\tBag file:\t%s\n\tFrequency (Hz):\t%s\n\tROS topic:\t%s\n"
+              "Press ENTER when finished" % (_DEFAULT_TRAJ_SAVE_LOCATION,
+                                             traj_hz, traj_topic))
+        b = rosbag.Bag(_DEFAULT_TRAJ_SAVE_LOCATION, 'w')
+        r = rospy.Rate(traj_hz)
+        i = None
+        count = 0
+        while not i:
+            i, _, _ = select.select([sys.stdin], [], [], 0)
+            b.write(trajectory_topic, get_pose(frame_global, frame_robot))
+            r.sleep()
+            count += 1
+        sys.stdout.readline()
+        b.close()
+        traj_bag = _DEFAULT_TRAJ_SAVE_LOCATION
+        print("Done. Wrote %d poses to bag." % count)
+    else:
+        print(
+            "Skipping. Using trajectory data from ROS bag:%\n\t%s" % traj_bag)
+
+        print("Loading ...")
+        print("TODO: do something hacky as building a tf tree from a bag "
+              "is painful...")
+        sys.exit(1)
+        b = rosbag.Bag(trajectory_bag)
+        for topic, msg, t in b.read_messages(topics=['/tf']):
+            pass
+
+    # Filter the trajectory using the provided filter function
+    print("\n%sTRAJECTORY FILTERING:" % Fore.BLUE)
+    print("Loading trajectory data from '%s' in '%s' ..." % (traj_topic,
+                                                             traj_bag))
+    b = rosbag.Bag(traj_bag)
+    poses = [m for _, m, _ in b.read_messages(topics=[traj_topic])]
+    print("\t%sDone (loaded %d poses)\n" % (Fore.GREEN, len(poses)))
+
+    print("Filtering poses with traj_fn '%s' ..." % (traj_filter_fn))
+    last_ind = None
+    last_pose = None
+    i = 0
+
+    def filter_fn(p):
+        if last_ind is None or last_pose is None:
+            last_ind = i
+            last_pose = p
+            return True
+        dist = calc_dist(last_pose, p)
+        ang = calc_yaw(last_pose, p)
+        delta = i - last_ind
+        i += 1
+        return eval(traj_filter_fn)
+
+    poses_filtered = filter(filter_fn, poses)
+    print("\t%sDone (filtered %d poses down to %d poses)" %
+          (Fore.GREEN, len(poses), len(poses_filtered)))
+
+    # Gather any other data required for the environment file
