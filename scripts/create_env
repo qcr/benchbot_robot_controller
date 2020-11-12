@@ -60,8 +60,8 @@ args are optional as they have sane defaults. Supported args:
         a string representing a filter function given the variables 'dist'
         (distance between pose & previous used pose), 'ang' (yaw angle in
         DEGREES between pose & previous used pose), & 'delta' (number of poses
-        that have been skipped). The string will be run through 'eval'
-        (default: '%s')
+        that have been skipped). The string will be run through 'eval()'
+        (default: '%s').
 
     traj_hz
         frequency in Hz to record poses along the trajectory (default: %f).
@@ -78,8 +78,8 @@ Please ensure you have the following before creating an environment file:
 
 Press ENTER to begin
 """ % (DEFAULT_FRAME_GLOBAL, DEFAULT_FRAME_ODOM, DEFAULT_FRAME_ROBOT,
-       DEFAULT_TRAJECTORY_BAG, DEFAULT_TRAJ_FILTER_FN, DEFAULT_TRAJECTORY_HZ,
-       DEFAULT_TRAJECTORY_TOPIC)
+       DEFAULT_TRAJ_BAG, DEFAULT_TRAJ_FILTER_FN, DEFAULT_TRAJ_HZ,
+       DEFAULT_TRAJ_TOPIC)
 
 _tf_buff = None
 _tf_list = None
@@ -87,7 +87,7 @@ _tf_list = None
 
 def calc_dist(pose_a, pose_b):
     return np.linalg.norm(
-        np.array([pose_a.position.x, pose_a.position_y]) -
+        np.array([pose_a.position.x, pose_a.position.y]) -
         np.array([pose_b.position.x, pose_b.position.y]))
 
 
@@ -96,12 +96,13 @@ def calc_yaw(pose_a, pose_b):
         np.matmul(
             tf.transformations.inverse_matrix(
                 tf.transformations.quaternion_matrix([
-                    pose_a.quaternion.x, pose_a.quaternion.y,
-                    pose_a.quaternion.z, pose_a.quaternion.w
-                ])) * tf.transformations.quaternion_matrix([
-                    pose_b.quaternion.x, pose_b.quaternion.y,
-                    pose_b.quaternion.z, pose_b.quaternion.w
-                ])))[2]
+                    pose_a.orientation.x, pose_a.orientation.y,
+                    pose_a.orientation.z, pose_a.orientation.w
+                ])),
+            tf.transformations.quaternion_matrix([
+                pose_b.orientation.x, pose_b.orientation.y,
+                pose_b.orientation.z, pose_b.orientation.w
+            ])))[2]
 
 
 def check_for_tf(frame_a, frame_b):
@@ -125,14 +126,16 @@ def euler_from_quat_msg(msg):
 def get_pose(frame_a, frame_b):
     if _tf_buff is None:
         setup_tf()
-    t = tf_buff.lookup_transform(frame_a, frame_b, 0, rospy.Duration(1))
+    t = _tf_buff.lookup_transform(frame_a, frame_b, rospy.Time(0),
+                                  rospy.Duration(1))
     return Pose(
         position=t.transform.translation, orientation=t.transform.rotation)
 
 
 def setup_tf():
-    tf_buff = tf2_ros.Buffer()
-    tf_list = tf2_ros.TransformListener(tf_buff)
+    global _tf_buff, _tf_list
+    _tf_buff = tf2_ros.Buffer()
+    _tf_list = tf2_ros.TransformListener(_tf_buff)
 
 
 if __name__ == "__main__":
@@ -148,6 +151,7 @@ if __name__ == "__main__":
     frame_odom = rospy.get_param('frame_odom', DEFAULT_FRAME_ODOM)
     frame_robot = rospy.get_param('frame_robot', DEFAULT_FRAME_ROBOT)
     traj_bag = rospy.get_param('traj_bag', DEFAULT_TRAJ_BAG)
+    traj_filter_fn = rospy.get_param('traj_filter_fn', DEFAULT_TRAJ_FILTER_FN)
     traj_hz = rospy.get_param('traj_hz', DEFAULT_TRAJ_HZ)
     traj_topic = rospy.get_param('traj_topic', DEFAULT_TRAJ_TOPIC)
     print("\t%sDone.\n" % Fore.GREEN)
@@ -165,15 +169,18 @@ if __name__ == "__main__":
               "position is:")
         i = None
         while not i:
-            i, _, _ = select.select([sys.stdin], [], [], 0)
             p = get_pose(frame_global, frame_robot)
             e = euler_from_quat_msg(p.orientation)
-            print("\tPosition (x,y,z): (%f, %f, %f) Orientation (r,p,y): "
-                  "(%f, %f, %f)" % (p.position.x, p.position.y, p.position.z,
-                                    e[0], e[1], e[2]))
+            print(
+                "\tPosition (x,y,z): (%.2f, %.2f, %.2f) Orientation (r,p,y): "
+                "(%.2f, %.2f, %.2f)     " % (p.position.x, p.position.y,
+                                             p.position.z, e[0], e[1], e[2]),
+                end='\r')
             sleep(0.25)
+            i, _, _ = select.select([sys.stdin], [], [], 0)
         sys.stdin.readline()
-        print("\nRecording poses with the following settings:"
+        print("%s" % ' ' * 100)
+        print("Recording poses with the following settings:"
               "\n\tBag file:\t%s\n\tFrequency (Hz):\t%s\n\tROS topic:\t%s\n"
               "Press ENTER when finished" % (_DEFAULT_TRAJ_SAVE_LOCATION,
                                              traj_hz, traj_topic))
@@ -183,10 +190,9 @@ if __name__ == "__main__":
         count = 0
         while not i:
             i, _, _ = select.select([sys.stdin], [], [], 0)
-            b.write(trajectory_topic, get_pose(frame_global, frame_robot))
+            b.write(traj_topic, get_pose(frame_global, frame_robot))
             r.sleep()
             count += 1
-        sys.stdout.readline()
         b.close()
         traj_bag = _DEFAULT_TRAJ_SAVE_LOCATION
         print("Done. Wrote %d poses to bag." % count)
@@ -211,20 +217,28 @@ if __name__ == "__main__":
     print("\t%sDone (loaded %d poses)\n" % (Fore.GREEN, len(poses)))
 
     print("Filtering poses with traj_fn '%s' ..." % (traj_filter_fn))
-    last_ind = None
-    last_pose = None
-    i = 0
+
+    last_state = {'ind': None, 'pose': None, 'i': 0}
 
     def filter_fn(p):
-        if last_ind is None or last_pose is None:
-            last_ind = i
-            last_pose = p
+        # Always keep the first pose
+        if last_state['ind'] is None or last_state['pose'] is None:
+            last_state['ind'] = last_state['i']
+            last_state['pose'] = p
             return True
-        dist = calc_dist(last_pose, p)
-        ang = calc_yaw(last_pose, p)
-        delta = i - last_ind
-        i += 1
-        return eval(traj_filter_fn)
+
+        # Use the filter fn to decide if we should keep this pose
+        dist = calc_dist(last_state['pose'], p)
+        ang = calc_yaw(last_state['pose'], p)
+        delta = last_state['i'] - last_state['ind']
+        ret = eval(traj_filter_fn)
+
+        # Return (keeping if required)
+        if ret:
+            last_state['ind'] = last_state['i']
+            last_state['pose'] = p
+        last_state['i'] += 1
+        return ret
 
     poses_filtered = filter(filter_fn, poses)
     print("\t%sDone (filtered %d poses down to %d poses)" %
