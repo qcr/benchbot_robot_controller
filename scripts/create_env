@@ -13,6 +13,7 @@ import tf2_ros
 import sys
 from time import sleep
 import select
+import yaml
 
 try:
     input = raw_input
@@ -132,10 +133,22 @@ def get_pose(frame_a, frame_b):
         position=t.transform.translation, orientation=t.transform.rotation)
 
 
+def output_filename(data):
+    return ("./%s.yaml" % next(
+        x for x in data if x['environment_name'])['environment_name'])
+
+
 def setup_tf():
     global _tf_buff, _tf_list
     _tf_buff = tf2_ros.Buffer()
     _tf_list = tf2_ros.TransformListener(_tf_buff)
+
+
+def simple_pose(pose):
+    return [
+        pose.orientation.w, pose.orientation.x, pose.orientation.y,
+        pose.orientation.z, pose.position.x, pose.position.y, pose.position.z
+    ]
 
 
 if __name__ == "__main__":
@@ -147,13 +160,13 @@ if __name__ == "__main__":
     print("%sINITIAL SANITY CHECKS:" % Fore.BLUE)
     print("Creating a ROS node ... ")
     rospy.init_node('benchbot_environment_creator')
-    frame_global = rospy.get_param('frame_global', DEFAULT_FRAME_GLOBAL)
-    frame_odom = rospy.get_param('frame_odom', DEFAULT_FRAME_ODOM)
-    frame_robot = rospy.get_param('frame_robot', DEFAULT_FRAME_ROBOT)
-    traj_bag = rospy.get_param('traj_bag', DEFAULT_TRAJ_BAG)
-    traj_filter_fn = rospy.get_param('traj_filter_fn', DEFAULT_TRAJ_FILTER_FN)
-    traj_hz = rospy.get_param('traj_hz', DEFAULT_TRAJ_HZ)
-    traj_topic = rospy.get_param('traj_topic', DEFAULT_TRAJ_TOPIC)
+    frame_global = rospy.get_param('~frame_global', DEFAULT_FRAME_GLOBAL)
+    frame_odom = rospy.get_param('~frame_odom', DEFAULT_FRAME_ODOM)
+    frame_robot = rospy.get_param('~frame_robot', DEFAULT_FRAME_ROBOT)
+    traj_bag = rospy.get_param('~traj_bag', DEFAULT_TRAJ_BAG)
+    traj_filter_fn = rospy.get_param('~traj_filter_fn', DEFAULT_TRAJ_FILTER_FN)
+    traj_hz = rospy.get_param('~traj_hz', DEFAULT_TRAJ_HZ)
+    traj_topic = rospy.get_param('~traj_topic', DEFAULT_TRAJ_TOPIC)
     print("\t%sDone.\n" % Fore.GREEN)
 
     check_for_tf(frame_global, frame_odom)
@@ -193,20 +206,12 @@ if __name__ == "__main__":
             b.write(traj_topic, get_pose(frame_global, frame_robot))
             r.sleep()
             count += 1
+        sys.stdin.readline()
         b.close()
         traj_bag = _DEFAULT_TRAJ_SAVE_LOCATION
         print("Done. Wrote %d poses to bag." % count)
     else:
-        print(
-            "Skipping. Using trajectory data from ROS bag:%\n\t%s" % traj_bag)
-
-        print("Loading ...")
-        print("TODO: do something hacky as building a tf tree from a bag "
-              "is painful...")
-        sys.exit(1)
-        b = rosbag.Bag(trajectory_bag)
-        for topic, msg, t in b.read_messages(topics=['/tf']):
-            pass
+        print("Skipping. Using trajectory data from ROS bag:\n\t%s" % traj_bag)
 
     # Filter the trajectory using the provided filter function
     print("\n%sTRAJECTORY FILTERING:" % Fore.BLUE)
@@ -245,3 +250,40 @@ if __name__ == "__main__":
           (Fore.GREEN, len(poses), len(poses_filtered)))
 
     # Gather any other data required for the environment file
+    print("\n%sENVIRONMENT METADATA:" % Fore.BLUE)
+    output = [{
+        'environment_name':
+        input("Short environment name (should have no spaces):\n")
+    }, {
+        'map_path':
+        input("Path for map (leave empty & manually add later "
+              "if doesn't exist yet):\n")
+    }]
+    output.append({
+        'description':
+        input("Detailed description (multiline input is "
+              "accepted, press ENTER twice when done):\n")
+    })
+    extra = []
+    while True:
+        l = input()
+        if l:
+            extra.append(l)
+        else:
+            break
+    output[-1]['description'] = '\n'.join([output[-1]['description']] + extra)
+    output.append({'start_pose': simple_pose(poses_filtered[0])})
+    output.append({
+        'trajectory_poses': ["%s" % simple_pose(p) for p in poses_filtered]
+    })
+
+    # Write the gathered data to file in the appropriate YAML format
+    print("\n%sCREATING ENVIRONMENT FILE:" % Fore.BLUE)
+    print("Dumping generated data to '%s' ..." % output_filename(output))
+    with open(output_filename(output), 'w') as f:
+        f.writelines([
+            yaml.dump(
+                o, default_flow_style=(None if 'start_pose' in o else False))
+            for o in output
+        ])
+    print("\t%sDone" % Fore.GREEN)
