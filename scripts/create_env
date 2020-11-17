@@ -34,13 +34,13 @@ _DEFAULT_TRAJ_SAVE_LOCATION = (
     datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S'))
 
 STRING_WELCOME = """
-Welcome to the BenchBot Real World Environment Builder. This script will help
-you create an environment definition file in the format BenchBot requires, for
-your own real robot platform & environment.
+Welcome to the BenchBot Environment Builder. This script helps creation of an
+environment definition file in the format BenchBot requires, for your own robot
+platform & environment.
 
-Arguments are expected as ROS params, so please make sure you run this script
-through ROS (i.e. rosrun benchbot_robot_controller create_env _arg:=value). All
-args are optional as they have sane defaults. Supported args:
+Arguments are expected as ROS params, so please ensure the script is run through
+ROS (i.e. rosrun benchbot_robot_controller create_env_map _arg:=value). All args
+are optional as they have sane defaults. Supported args:
 
     frame_global
         frame everything is with respect to (default: '%s').
