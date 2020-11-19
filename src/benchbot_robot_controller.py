@@ -540,7 +540,8 @@ class RobotController(object):
         # Copy in the merged dicts
         self.config = {
             'robot': DEFAULT_CONFIG_ROBOT.copy(),
-            'environments': {}
+            'environments': {},
+            'task': {}
         }
         for k in self.config:
             self.config[k].update(config[k])

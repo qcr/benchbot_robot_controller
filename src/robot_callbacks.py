@@ -117,12 +117,45 @@ def _debug_move(data, publisher, controller):
         "FINAL POSE (RELATIVE): %s" % print_pose(__tr_b_wrt_a(pose_a, pose_b)))
     print("FINAL POSE (ABSOLUTE): %s" % print_pose(pose_b))
 
+def _define_initial_pose(controller):
+    # Check if we need to define initial pose (clean state and not already initialised)
+    if not controller.instance.is_dirty() and 'initial_pose_tf_mat' not in controller.state.keys():
+        controller.state['initial_pose_tf_mat'] = __tf_ros_stamped_to_tf_matrix(
+                                            controller.tf_buffer.lookup_transform(
+                                            controller.config['robot']['global_frame'],
+                                            controller.config['robot']['robot_frame'], 
+                                            rospy.Time()))
+
+def _get_noisy_pose(controller, child_frame):
+    # Assumes initial pose of the robot has already been set
+    # Get the initial pose of the robot within the world
+    world_t_init_pose = controller.state['initial_pose_tf_mat']
+
+    # Get the pose of child_frame w.r.t odom
+    # TODO check if we should change odom from fixed name to definable
+    odom_t_child = __tf_ros_stamped_to_tf_matrix(
+                                            controller.tf_buffer.lookup_transform(
+                                            'odom', child_frame,
+                                            rospy.Time()))
+    # Noisy child should be init pose + odom_t_child
+    return np.matmul(world_t_init_pose, odom_t_child);
+
 
 def _current_pose(controller):
-    return __tf_ros_stamped_to_tf_matrix(
-        controller.tf_buffer.lookup_transform(
-            controller.config['robot']['global_frame'],
-            controller.config['robot']['robot_frame'], rospy.Time()))
+    # Ensure initial pose has been defined if it hasn't already
+    _define_initial_pose(controller)
+
+    # Find the current robot pose (depending on pose mode)
+    if 'ground_truth' in controller.config['task']['name']:
+        # TF tree by default provides poses such that robot pose is GT
+        # Just return the transform in the tree
+        return __tf_ros_stamped_to_tf_matrix(
+            controller.tf_buffer.lookup_transform(
+                controller.config['robot']['global_frame'],
+                controller.config['robot']['robot_frame'], rospy.Time()))
+    else:
+        # Convert pose to noisy mode by adding odom->robot transform to initial pose
+        return _get_noisy_pose(controller, controller.config['robot']['robot_frame'])
 
 
 def _move_speed_factor(controller):
@@ -194,13 +227,25 @@ def _move_to_pose(goal, publisher, controller):
 
 
 def create_pose_list(data, controller):
-    # TODO REMOVE HACK FOR FIXING CAMERA NAME!!!
+    # Ensure the initial pose has been defined if not already
+    _define_initial_pose(controller)
+
+    # Check what mode we are in for poses (ground_truth or noisy)
+    gt_mode = 'ground_truth' in controller.config['task']['name']
     tfs = {
         p: __tf_ros_stamped_to_tf_matrix(
             controller.tf_buffer.lookup_transform(
-                controller.config['robot']['global_frame'], p, rospy.Time()))
-        for p in controller.config['robot']['poses']
+                controller.config['robot']['global_frame'], p, rospy.Time())) if gt_mode else
+                _get_noisy_pose(controller, p)
+           # If we are in noisy mode, poses become initial pose plus odom->target
+        for p in controller.config['robot']['poses'] if p != 'initial_pose'
     }
+    
+    # Add the initial pose if desired (not in tf tree)
+    if 'initial_pose' in controller.config['robot']['poses']:
+        tfs['initial_pose'] = controller.state['initial_pose_tf_mat']
+    
+    # TODO REMOVE HACK FOR FIXING CAMERA NAME!!!
     return {
         'camera' if 'left_camera' in k else k: {
             'parent_frame': controller.config['robot']['global_frame'],
