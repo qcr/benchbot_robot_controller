@@ -16,6 +16,7 @@ import time
 import tf2_ros
 import threading
 import traceback
+import json
 
 jet.register_handlers()
 
@@ -88,7 +89,8 @@ VARIABLES = {
     'ISAAC_PATH': "os.environ.get('ISAAC_SDK_PATH', '')",
     'MAP_PATH': "self.config_env['map_path']",
     'SIM_PATH': "os.environ.get('BENCHBOT_SIMULATOR_PATH', '')",
-    'START_POSE': "self.config_env['start_pose_local']"
+    'START_POSE': "self.config_env['start_pose_local']",
+    'OBJECT_LABELS': 'str(json.dumps([{"name": lbl.encode("ascii")} for lbl in self.config_env["object_labels"]]))'
 }
 
 _CMD_DELETE_FILE = 'rm -f $FILENAME'
@@ -123,6 +125,10 @@ class ControllerInstance(object):
     def _replace_variables(self, text):
         for k, v in VARIABLES.items():
             text = text.replace("$%s" % k, str(eval(v)))
+            if k == 'OBJECT_LABELS':
+                print("PLEASE BE OBJECT LABELS")
+                print(v)
+                print(str(eval(v)))
         return text
 
     def is_collided(self):
@@ -160,6 +166,7 @@ class ControllerInstance(object):
             return False
 
         # Get a set of commands by replacing variables with the config values
+        print("AAAAAAAAAAAH: ", self.config_env['object_labels'])
         self._cmds = [
             self._replace_variables(c) for c in self.config_robot['start_cmds']
         ]
