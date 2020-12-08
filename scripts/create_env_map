@@ -1,0 +1,69 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+
+from colorama import init, Fore
+from nav_msgs.msg import OccupancyGrid
+import rospy
+
+try:
+    input = raw_input
+except NameError:
+    pass
+
+DEFAULT_MAP_TOPIC = '/map'
+
+STRING_WELCOME = """
+Welcome to the BenchBot Real World Map Builder. This script helps build a
+map for real world evaluation environment using a ROS map building package (the
+choice of which is up to you).
+
+Arguments are expected as ROS params, so please ensure the script is run through
+ROS (i.e. rosrun benchbot_robot_controller create_env_map _arg:=value).
+
+    map_topic
+        Topic where a 'nav_msgs/OccupancyGrid' representing the map is
+        available (default: '/map').
+
+Please ensure you have the following before creating the map:
+    - A real robot platform running ROS map
+    - A mapping ROS node started (ideally with an empty map)
+    - All required transforms to build the map publishing
+
+Press ENTER to begin
+"""
+
+
+def check_map_topic(topic_name):
+    print("Checking map topic '%s' is active ..." % topic_name)
+    try:
+        get_map(topic_name)
+    except Exception as e:
+        print("\t%sERROR: failed to find map data on topic '%s'." %
+              (Fore.RED, topic_name))
+        sys.exit(1)
+    print("\t%sDone.\n" % Fore.GREEN)
+
+
+def get_map(topic):
+    return rospy.wait_for_message(
+        topic, OccupancyGrid, timeout=rospy.Duration(1))
+
+
+if __name__ == "__main__":
+    # Print information string
+    init(autoreset=True)
+    input(STRING_WELCOME)
+
+    # Ensure everything we require is running / setup
+    print("%sINITIAL SANITY CHECKS:" % Fore.BLUE)
+    print("Creating a ROS node ... ")
+    rospy.init_node('benchbot_environment_mapper')
+    map_topic = rospy.get_param('~map_topic', DEFAULT_MAP_TOPIC)
+    print("\t%sDone.\n" % Fore.GREEN)
+
+    check_map_topic(map_topic)
+
+    # Map building process
+    print("%sMAP BUILDING PROCESS:" % Fore.BLUE)
+    print("TODO")

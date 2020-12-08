@@ -1,0 +1,10 @@
+#!/usr/bin/env python
+
+import rospy
+
+from benchbot_robot_controller import RobotController
+
+if __name__ == "__main__":
+    rospy.init_node("benchbot_robot_controller")
+    rc = RobotController()
+    rc.run()

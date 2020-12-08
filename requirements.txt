@@ -1,0 +1,8 @@
+colorama
+flask
+gevent
+jsonpickle
+numpy
+pyyaml
+requests
+scipy
