@@ -6,6 +6,7 @@ import rospy
 from scipy.spatial.transform import Rotation as Rot
 
 from geometry_msgs.msg import Twist, Vector3
+# from benchbot_msgs import isaac_segment_img
 
 _DEFAULT_SPEED_FACTOR = 1
 
@@ -273,6 +274,11 @@ def encode_color_image(data, controller):
 def encode_depth_image(data, controller):
     return ros_numpy.numpify(data)
 
+def encode_segment_image(data, controller):
+    return {'class_segment_img': ros_numpy.numpify(data.class_segment_img),
+            'instance_segment_img': ros_numpy.numpify(data.instance_segment_img),
+            'class_ids': {class_name: class_id for (class_name, class_id) in 
+                          zip(data.class_names, data.class_ids)}}
 
 def encode_laserscan(data, controller):
     return {
