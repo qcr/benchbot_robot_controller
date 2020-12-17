@@ -76,6 +76,10 @@ DEFAULT_CONFIG_ROBOT = {
     'start_cmds': [],
 }
 
+DEFAULT_CONFIG_ENV = {
+    "object_labels": []
+}
+
 CONN_API_TO_ROS = 'api_to_ros'
 CONN_ROS_TO_API = 'ros_to_api'
 CONN_ROSCACHE_TO_API = 'roscache_to_api'
@@ -125,10 +129,6 @@ class ControllerInstance(object):
     def _replace_variables(self, text):
         for k, v in VARIABLES.items():
             text = text.replace("$%s" % k, str(eval(v)))
-            if k == 'OBJECT_LABELS':
-                print("PLEASE BE OBJECT LABELS")
-                print(v)
-                print(str(eval(v)))
         return text
 
     def is_collided(self):
@@ -166,7 +166,6 @@ class ControllerInstance(object):
             return False
 
         # Get a set of commands by replacing variables with the config values
-        print("AAAAAAAAAAAH: ", self.config_env['object_labels'])
         self._cmds = [
             self._replace_variables(c) for c in self.config_robot['start_cmds']
         ]
@@ -552,6 +551,11 @@ class RobotController(object):
         }
         for k in self.config:
             self.config[k].update(config[k])
+        
+        # TODO neater version of this must be an option
+        for env_name, env_config in self.config['environments'].items():
+            if 'object_labels' not in env_config.keys():
+                env_config.update(DEFAULT_CONFIG_ENV)
 
         # Set selected environment as first by default
         self.selected_env = self._env_first()
