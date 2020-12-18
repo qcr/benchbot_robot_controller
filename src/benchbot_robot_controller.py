@@ -29,6 +29,8 @@ DEFAULT_CONFIG_ROBOT = {
 
 DEFAULT_CONFIG_ENV = {"object_labels": []}
 
+DEFAULT_STATE = {"selected_environment": 0}
+
 CONN_API_TO_ROS = 'api_to_ros'
 CONN_ROS_TO_API = 'ros_to_api'
 CONN_ROSCACHE_TO_API = 'roscache_to_api'
@@ -218,7 +220,6 @@ class RobotController(object):
         self._tf_listener = tf2_ros.TransformListener(self.tf_buffer)
 
         self.instance = None
-        self.selected_env = None
 
     @staticmethod
     def _attempt_connection_imports(connection_data):
@@ -269,20 +270,10 @@ class RobotController(object):
             print("UNIMPLEMENTED CONNECTION CALL: %s" %
                   self.connections[connection_name]['type'])
 
-    def _env_first(self):
-        return min(self.config['environments'].items(),
-                   key=lambda e: e[1]['order'])[0]
-
     def _env_next(self):
-        return next(
-            (e[0] for e in self.config['environments'].items() if e[1]['order']
-             == self.config['environments'][self.selected_env]['order'] + 1),
-            None)
-
-    def _env_number(self, env_name):
-        # NOTE assumes orders are sequential, starting from 0
-        return (None if env_name is None else
-                self.config['environments'][env_name]['order'])
+        return (self.state['selected_environment']
+                if self.state['selected_environment'] +
+                1 < len(self.config['environments']) else 0)
 
     def _generate_subscriber_callback(self, connection_name):
         def __cb(data):
@@ -409,12 +400,10 @@ class RobotController(object):
         def __next():
             try:
                 self.stop()
-                if self.selected_env is not None and self._env_next() is None:
+                if self._env_next == 0:
                     raise ValueError(
                         "There is no next map; at the end of the list")
-                self.selected_env = (
-                    self._env_first() if self.selected_env is None
-                    or self._env_next() is None else self._env_next())
+                self.state['selected_environment'] = self._env_next
                 self.start()
                 success = True
             except Exception as e:
@@ -436,7 +425,6 @@ class RobotController(object):
         @robot_flask.route('/restart', methods=['GET'])
         def __restart():
             # Restarts the robot in the FIRST scene
-            self.selected_env = None
             resp = __reset()
             resp.data = resp.data.replace('reset', 'restart')
             return resp
@@ -446,9 +434,10 @@ class RobotController(object):
             try:
                 return flask.jsonify({
                     'name':
-                    self.selected_env,
+                    self.config['environments'][
+                        self.state['selected_environment']]['name'],
                     'number':
-                    self._env_number(self.selected_env)
+                    self.state['selected_environment']
                 })
             except Exception as e:
                 rospy.logerr(e)
@@ -485,22 +474,14 @@ class RobotController(object):
         print("Stopped")
 
     def set_config(self, config):
+        # Stop any running instances (we are bailing on any notion of dynamic
+        # reconfiguration...)
+        self.stop()
+
         # Copy in the merged dicts
-        self.config = {
-            'robot': DEFAULT_CONFIG_ROBOT.copy(),
-            'environments': {},
-            'task': {}
-        }
         for k in self.config:
             self.config[k].update(config[k])
-
-        # TODO neater version of this must be an option
-        for env_name, env_config in self.config['environments'].items():
-            if 'object_labels' not in env_config.keys():
-                env_config.update(DEFAULT_CONFIG_ENV)
-
-        # Set selected environment as first by default
-        self.selected_env = self._env_first()
+        print(self.config['environments'])
 
         # Register all of the required connections
         for k, v in self.config['robot']['connections'].items():
@@ -518,7 +499,7 @@ class RobotController(object):
         self.config_valid = True
 
     def start(self):
-        self.state = {}
+        self.state = DEFAULT_STATE.copy()
         self.instance = ControllerInstance(
             self.config['robot'],
             self.config['environments'][self.selected_env], [
