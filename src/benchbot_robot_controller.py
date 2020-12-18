@@ -41,7 +41,7 @@ TIMEOUT_STARTUP = 90
 
 VARIABLES = {
     'ENVS_PATH':
-    "os.path.dirname(self.config_env['path'])",
+    "os.path.dirname(self.config_env['_file_path'])",
     'ISAAC_PATH':
     "os.environ.get('ISAAC_SDK_PATH', '')",
     'MAP_PATH':
@@ -49,7 +49,7 @@ VARIABLES = {
     'SIM_PATH':
     "os.environ.get('BENCHBOT_SIMULATOR_PATH', '')",
     'START_POSE':
-    "self.config_env['start_pose_local']",
+    "self.config_env['start_pose']",
     'OBJECT_LABELS':
     'str(json.dumps([{"name": lbl.encode("ascii")} for lbl in self.config_env["object_labels"]]))'
 }
@@ -479,9 +479,19 @@ class RobotController(object):
         self.stop()
 
         # Copy in the merged dicts
-        for k in self.config:
-            self.config[k].update(config[k])
-        print(self.config['environments'])
+        self.config = {
+            'environments':
+            [DEFAULT_CONFIG_ENV.copy() for e in config['environments']],
+            'robot':
+            DEFAULT_CONFIG_ROBOT.copy(),
+            'task': {}
+        }
+        for k in self.config.keys():
+            if isinstance(self.config[k], dict):
+                self.config[k].update(config[k])
+            elif isinstance(self.config[k], list):
+                for i, _ in enumerate(self.config[k]):
+                    self.config[k][i].update(config[k][i])
 
         # Register all of the required connections
         for k, v in self.config['robot']['connections'].items():
@@ -502,7 +512,7 @@ class RobotController(object):
         self.state = DEFAULT_STATE.copy()
         self.instance = ControllerInstance(
             self.config['robot'],
-            self.config['environments'][self.selected_env], [
+            self.config['environments'][self.state['selected_environment']], [
                 c['ros'] for c in self.connections.values()
                 if c['type'] == CONN_ROS_TO_API and c['ros'] != None
             ])
