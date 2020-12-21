@@ -214,7 +214,7 @@ class RobotController(object):
         self.config = None
         self.config_valid = False
 
-        self.state = {}
+        self.state = DEFAULT_STATE.copy()
         self.connections = {}
         self.tf_buffer = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self.tf_buffer)
@@ -271,8 +271,8 @@ class RobotController(object):
                   self.connections[connection_name]['type'])
 
     def _env_next(self):
-        return (self.state['selected_environment']
-                if self.state['selected_environment'] +
+        return (self.state['selected_environment'] +
+                1 if self.state['selected_environment'] +
                 1 < len(self.config['environments']) else 0)
 
     def _generate_subscriber_callback(self, connection_name):
@@ -400,10 +400,10 @@ class RobotController(object):
         def __next():
             try:
                 self.stop()
-                if self._env_next == 0:
+                if self._env_next() == 0:
                     raise ValueError(
                         "There is no next map; at the end of the list")
-                self.state['selected_environment'] = self._env_next
+                self.state['selected_environment'] = self._env_next()
                 self.start()
                 success = True
             except Exception as e:
@@ -429,7 +429,7 @@ class RobotController(object):
             resp.data = resp.data.replace('reset', 'restart')
             return resp
 
-        @robot_flask.route('/selected_env', methods=['GET'])
+        @robot_flask.route('/selected_environment', methods=['GET'])
         def __selected_env():
             try:
                 return flask.jsonify({
@@ -509,7 +509,10 @@ class RobotController(object):
         self.config_valid = True
 
     def start(self):
-        self.state = DEFAULT_STATE.copy()
+        self.state = {
+            k: v
+            for k, v in self.state.items() if k in DEFAULT_STATE
+        }
         self.instance = ControllerInstance(
             self.config['robot'],
             self.config['environments'][self.state['selected_environment']], [
