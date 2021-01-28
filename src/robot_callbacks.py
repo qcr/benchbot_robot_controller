@@ -213,8 +213,8 @@ def _move_to_pose(goal, publisher, controller):
         # If within distance tolerance, correct angle & quit (the controller
         # aims to drive the robot in at the correct angle, if it is already
         # "in" but the angle is wrong, it will get stuck!)
-        print("rho: %f, alpha: %f, beta: %f, back: %d" %
-              (rho, alpha, beta, backwards))
+        # print("rho: %f, alpha: %f, beta: %f, back: %d" %
+        #       (rho, alpha, beta, backwards))
         if rho < _MOVE_TOL_DIST:
             _move_to_angle(goal, publisher, controller)
             break
