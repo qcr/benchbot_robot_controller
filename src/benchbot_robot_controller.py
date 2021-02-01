@@ -399,10 +399,10 @@ class RobotController(object):
         @robot_flask.route('/next', methods=['GET'])
         def __next():
             try:
-                self.stop()
                 if self._env_next() == 0:
                     raise ValueError(
                         "There is no next map; at the end of the list")
+                self.stop()
                 self.state['selected_environment'] = self._env_next()
                 self.start()
                 success = True
