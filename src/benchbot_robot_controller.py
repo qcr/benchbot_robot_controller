@@ -214,12 +214,14 @@ class RobotController(object):
         self.config = None
         self.config_valid = False
 
-        self.state = DEFAULT_STATE.copy()
+        self.state = None
         self.connections = {}
         self.tf_buffer = tf2_ros.Buffer()
         self._tf_listener = tf2_ros.TransformListener(self.tf_buffer)
 
         self.instance = None
+
+        self.wipe()
 
     @staticmethod
     def _attempt_connection_imports(connection_data):
@@ -425,6 +427,7 @@ class RobotController(object):
         @robot_flask.route('/restart', methods=['GET'])
         def __restart():
             # Restarts the robot in the FIRST scene
+            self.wipe()
             resp = __reset()
             resp.data = resp.data.replace('reset', 'restart')
             return resp
@@ -524,3 +527,6 @@ class RobotController(object):
     def stop(self):
         if self.instance is not None:
             self.instance.stop()
+
+    def wipe(self):
+        self.state = copy.deepcopy(DEFAULT_STATE)
