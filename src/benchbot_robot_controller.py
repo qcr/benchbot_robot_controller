@@ -440,7 +440,10 @@ class RobotController(object):
                     self.config['environments'][
                         self.state['selected_environment']]['name'],
                     'variant':
-                    self.state['selected_environment']['variant']
+                    self.config['environments'][
+                        self.state['selected_environment']]['variant'],
+                    'number':
+                    self.state['selected_environment']
                 })
             except Exception as e:
                 rospy.logerr(e)
