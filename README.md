@@ -1,17 +1,17 @@
-**NOTE: this software is part of the BenchBot software stack, and not intended to be run in isolation. For a working BenchBot system, please install the BenchBot software stack by following the instructions [here](https://github.com/roboticvisionorg/benchbot).**
+**NOTE: this software is part of the BenchBot software stack, and not intended to be run in isolation. For a working BenchBot system, please install the BenchBot software stack by following the instructions [here](https://github.com/qcr/benchbot).**
 
 # BenchBot Robot Controller
 
 ![benchbot_robot_controller](./docs/benchbot_controller.jpg)
 
-The BenchBot Robot Controller is the layer of the BenchBot software stack that handles all direct interactions with the underlying robot platform. It is designed to be run directly on the robot platform, whether that is a real robot or on the same host as a simulator. This allows optimal performance for tight control loops in actuation, like those used for moving the robot between poses. It also significantly simplifies the [BenchBot Supervisor](https://github.com/roboticvisionorg/benchbot_supervisor), allowing it to focus solely on HTTP communications and configurations without the burden of ROS.
+The BenchBot Robot Controller is the layer of the BenchBot software stack that handles all direct interactions with the underlying robot platform. It is designed to be run directly on the robot platform, whether that is a real robot or on the same host as a simulator. This allows optimal performance for tight control loops in actuation, like those used for moving the robot between poses. It also significantly simplifies the [BenchBot Supervisor](https://github.com/qcr/benchbot_supervisor), allowing it to focus solely on HTTP communications and configurations without the burden of ROS.
 
 ## Installing and running the BenchBot Robot Controller
 
 The BenchBot robot controller is a ROS package: it contains a ROS node which communicates downstream to low-level components, a HTTP server for upstream communication, and a Python-based process manager for automated management of low-level components. The package is installed like any other ROS package:
 
 ```
-u@pc:~$ git clone https://github.com/roboticvisionorg/benchbot_robot_controller
+u@pc:~$ git clone https://github.com/qcr/benchbot_robot_controller
 u@pc:~$ ln -sv "$(pwd)/benchbot_robot_controller <CATKIN_WS>/src/"
 u@pc:~$ cd <CATKIN_WS> && catkin_make
 ```
