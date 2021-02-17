@@ -6,6 +6,7 @@ import rospy
 from scipy.spatial.transform import Rotation as Rot
 
 from geometry_msgs.msg import Twist, Vector3
+# from benchbot_msgs import isaac_segment_img
 
 _DEFAULT_SPEED_FACTOR = 1
 
@@ -46,8 +47,8 @@ def __pi_wrap(angle):
 def __pose_vector_to_tf_matrix(pv):
     # Expected format is [x,y,z,w,X,Y,Z]
     return np.vstack((np.hstack((Rot.from_quat(pv[0:4]).as_dcm(),
-                                 np.array(pv[4:]).reshape(3, 1))),
-                      [0, 0, 0, 1]))
+                                 np.array(pv[4:]).reshape(3,
+                                                          1))), [0, 0, 0, 1]))
 
 
 def __safe_dict_get(d, key, default):
@@ -97,8 +98,8 @@ def _debug_move(data, publisher, controller):
     # - Uses 0 rotation & translation if values are missing
     def print_pose(pose):
         rpy = Rot.from_dcm(pose[0:3, 0:3]).as_euler('XYZ', degrees=True)
-        return ("rpy: %f, %f, %f  xyz: %f, %f, %f" % tuple(
-            np.hstack((rpy, pose[0:3, 3].transpose()))))
+        return ("rpy: %f, %f, %f  xyz: %f, %f, %f" %
+                tuple(np.hstack((rpy, pose[0:3, 3].transpose()))))
 
     pose_a = _current_pose(controller)
     print("STARTING @ POSE: %s" % print_pose(pose_a))
@@ -109,22 +110,25 @@ def _debug_move(data, publisher, controller):
                          __safe_dict_get(data, 'rot_xyzw', [0, 0, 0, 1]) +
                          __safe_dict_get(data, 'trans_xyz', [0, 0, 0])))
     print("GOAL POSE (RELATIVE): %s" % print_pose(relative_pose))
-    print("GOAL POSE (ABSOLUTE): %s" % print_pose(
-        np.matmul(pose_a, relative_pose)))
+    print("GOAL POSE (ABSOLUTE): %s" %
+          print_pose(np.matmul(pose_a, relative_pose)))
     _move_to_pose(np.matmul(pose_a, relative_pose), publisher, controller)
     pose_b = _current_pose(controller)
-    print(
-        "FINAL POSE (RELATIVE): %s" % print_pose(__tr_b_wrt_a(pose_a, pose_b)))
+    print("FINAL POSE (RELATIVE): %s" %
+          print_pose(__tr_b_wrt_a(pose_a, pose_b)))
     print("FINAL POSE (ABSOLUTE): %s" % print_pose(pose_b))
+
 
 def _define_initial_pose(controller):
     # Check if we need to define initial pose (clean state and not already initialised)
-    if not controller.instance.is_dirty() and 'initial_pose_tf_mat' not in controller.state.keys():
-        controller.state['initial_pose_tf_mat'] = __tf_ros_stamped_to_tf_matrix(
-                                            controller.tf_buffer.lookup_transform(
-                                            controller.config['robot']['global_frame'],
-                                            controller.config['robot']['robot_frame'], 
-                                            rospy.Time()))
+    if not controller.instance.is_dirty(
+    ) and 'initial_pose_tf_mat' not in controller.state.keys():
+        controller.state[
+            'initial_pose_tf_mat'] = __tf_ros_stamped_to_tf_matrix(
+                controller.tf_buffer.lookup_transform(
+                    controller.config['robot']['global_frame'],
+                    controller.config['robot']['robot_frame'], rospy.Time()))
+
 
 def _get_noisy_pose(controller, child_frame):
     # Assumes initial pose of the robot has already been set
@@ -134,11 +138,10 @@ def _get_noisy_pose(controller, child_frame):
     # Get the pose of child_frame w.r.t odom
     # TODO check if we should change odom from fixed name to definable
     odom_t_child = __tf_ros_stamped_to_tf_matrix(
-                                            controller.tf_buffer.lookup_transform(
-                                            'odom', child_frame,
-                                            rospy.Time()))
+        controller.tf_buffer.lookup_transform('odom', child_frame,
+                                              rospy.Time()))
     # Noisy child should be init pose + odom_t_child
-    return np.matmul(world_t_init_pose, odom_t_child);
+    return np.matmul(world_t_init_pose, odom_t_child)
 
 
 def _current_pose(controller):
@@ -155,13 +158,13 @@ def _current_pose(controller):
                 controller.config['robot']['robot_frame'], rospy.Time()))
     else:
         # Convert pose to noisy mode by adding odom->robot transform to initial pose
-        return _get_noisy_pose(controller, controller.config['robot']['robot_frame'])
+        return _get_noisy_pose(controller,
+                               controller.config['robot']['robot_frame'])
 
 
 def _move_speed_factor(controller):
-    return (controller.config['robot']['speed_factor']
-            if 'speed_factor' in controller.config['robot'] else
-            _DEFAULT_SPEED_FACTOR)
+    return (controller.config['robot']['speed_factor'] if 'speed_factor'
+            in controller.config['robot'] else _DEFAULT_SPEED_FACTOR)
 
 
 def _move_to_angle(goal, publisher, controller):
@@ -177,8 +180,8 @@ def _move_to_angle(goal, publisher, controller):
             break
 
         # Construct & send velocity msg
-        vel_msg.angular.z = (
-            _move_speed_factor(controller) * _MOVE_ANGLE_K * orientation_error)
+        vel_msg.angular.z = (_move_speed_factor(controller) * _MOVE_ANGLE_K *
+                             orientation_error)
         publisher.publish(vel_msg)
         hz_rate.sleep()
     publisher.publish(Twist())
@@ -210,8 +213,8 @@ def _move_to_pose(goal, publisher, controller):
         # If within distance tolerance, correct angle & quit (the controller
         # aims to drive the robot in at the correct angle, if it is already
         # "in" but the angle is wrong, it will get stuck!)
-        print("rho: %f, alpha: %f, beta: %f, back: %d" % (rho, alpha, beta,
-                                                          backwards))
+        # print("rho: %f, alpha: %f, beta: %f, back: %d" %
+        #       (rho, alpha, beta, backwards))
         if rho < _MOVE_TOL_DIST:
             _move_to_angle(goal, publisher, controller)
             break
@@ -235,16 +238,16 @@ def create_pose_list(data, controller):
     tfs = {
         p: __tf_ros_stamped_to_tf_matrix(
             controller.tf_buffer.lookup_transform(
-                controller.config['robot']['global_frame'], p, rospy.Time())) if gt_mode else
-                _get_noisy_pose(controller, p)
-           # If we are in noisy mode, poses become initial pose plus odom->target
+                controller.config['robot']['global_frame'], p, rospy.Time()))
+        if gt_mode else _get_noisy_pose(controller, p)
+        # If we are in noisy mode, poses become initial pose plus odom->target
         for p in controller.config['robot']['poses'] if p != 'initial_pose'
     }
-    
+
     # Add the initial pose if desired (not in tf tree)
     if 'initial_pose' in controller.config['robot']['poses']:
         tfs['initial_pose'] = controller.state['initial_pose_tf_mat']
-    
+
     # TODO REMOVE HACK FOR FIXING CAMERA NAME!!!
     return {
         'camera' if 'left_camera' in k else k: {
@@ -252,7 +255,8 @@ def create_pose_list(data, controller):
             'translation_xyz': v[:-1, -1],
             'rotation_rpy': Rot.from_dcm(v[:-1, :-1]).as_euler('XYZ'),
             'rotation_xyzw': Rot.from_dcm(v[:-1, :-1]).as_quat()
-        } for k, v in tfs.items()
+        }
+        for k, v in tfs.items()
     }
 
 
@@ -272,6 +276,17 @@ def encode_color_image(data, controller):
 
 def encode_depth_image(data, controller):
     return ros_numpy.numpify(data)
+
+
+def encode_segment_image(data, controller):
+    return {
+        'class_segment_img': ros_numpy.numpify(data.class_segment_img),
+        'instance_segment_img': ros_numpy.numpify(data.instance_segment_img),
+        'class_ids': {
+            class_name: class_id
+            for (class_name, class_id) in zip(data.class_names, data.class_ids)
+        }
+    }
 
 
 def encode_laserscan(data, controller):
@@ -314,16 +329,16 @@ def move_next(data, publisher, controller):
     if ('trajectory_pose_next' not in controller.state):
         controller.state['trajectory_pose_next'] = 0
         controller.state['trajectory_poses'] = controller.config[
-            'environments'][controller.selected_env]['trajectory_poses']
+            'environments'][
+                controller.state['selected_environment']]['trajectory_poses']
 
     # Servo to the goal pose
     _move_to_pose(
         __pose_vector_to_tf_matrix(
             np.take(
-                np.fromstring(
-                    controller.state['trajectory_poses'][controller.state[
-                        'trajectory_pose_next']].strip()[1:-1],
-                    sep=", "), [1, 2, 3, 0, 4, 5, 6])), publisher, controller)
+                np.array(controller.state['trajectory_poses'][
+                    controller.state['trajectory_pose_next']]),
+                [1, 2, 3, 0, 4, 5, 6])), publisher, controller)
 
     # Register that we completed this goal
     controller.state['trajectory_pose_next'] += 1
