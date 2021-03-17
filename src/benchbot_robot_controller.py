@@ -87,6 +87,24 @@ class ControllerInstance(object):
             text = text.replace("$%s" % k, str(eval(v)))
         return text
 
+    def health_check(self, check_running=True):
+        # Checks the health of the currently running instance, printing errors
+        # if they're encountered
+        fails = [p.poll() is not None for p in self._processes]
+        if any(fails):
+            i = fails.index(True)
+            print("\nTHE PROCESS STARTED BY THE FOLLOWING "
+                  "COMMAND HAS CRASHED:")
+            print("\t%s" % self._cmds[i])
+            print("\nDUMPING LOGGED OUTPUT:")
+            with open(os.path.join(self.config_robot['logs_dir'], str(i)),
+                      'r') as f:
+                print(f.read())
+            return False
+        elif check_running and not self.is_running():
+            return False
+        return True
+
     def is_collided(self):
         return (subprocess.Popen(_CMD_FILE_EXISTS.replace(
             '$FILENAME', self.config_robot['file_collisions']),
@@ -140,22 +158,14 @@ class ControllerInstance(object):
         start_time = time.time()
         while not self.is_running():
             time.sleep(0.25)
-            fails = [p.poll() is not None for p in self._processes]
-            if any(fails):
-                i = fails.index(True)
-                print("\nTHE PROCESS STARTED BY THE FOLLOWING "
-                      "COMMAND HAS CRASHED:")
-                print("\t%s" % self._cmds[i])
-                print("\nDUMPING LOGGED OUTPUT:")
-                with open(os.path.join(self.config_robot['logs_dir'], str(i)),
-                          'r') as f:
-                    print(f.read())
+            if not self.health_check(check_running=False):
                 return False
-            elif time.time() - start_time > TIMEOUT_STARTUP:
+            elif (time.time() - start_time > TIMEOUT_STARTUP
+                  and not self.health_check()):
                 print("\nROBOT WAS NOT DETECTED TO BE RUNNING AFTER %ss (no "
                       "data on ROS TOPICS). DUMPING LOGS FOR ALL COMMANDS..." %
                       TIMEOUT_STARTUP)
-                for i, c in enumerate(self._cmds):
+                for i, _ in enumerate(self._cmds):
                     print("COMMAND:")
                     print("\t%s" % self._cmds[i])
                     print("OUTPUT:")
@@ -472,8 +482,10 @@ class RobotController(object):
                 self.start()
                 print("Done")
 
-        # Wait until we get an exit signal, then shut down gracefully
-        evt.wait()
+        # Wait until we get an exit signal or crash, then shut down gracefully
+        while self.instance.health_check():
+            if evt.wait(0.1):
+                break
         print("\nShutting down the real robot ROS stack & exiting ...")
         robot_server.stop()
         self.stop()

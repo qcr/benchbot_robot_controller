@@ -234,7 +234,7 @@ def create_pose_list(data, controller):
     _define_initial_pose(controller)
 
     # Check what mode we are in for poses (ground_truth or noisy)
-    gt_mode = 'ground_truth' in controller.config['task']['name']
+    gt_mode = controller.config['task']['localisation'] != 'noisy'
     tfs = {
         p: __tf_ros_stamped_to_tf_matrix(
             controller.tf_buffer.lookup_transform(
