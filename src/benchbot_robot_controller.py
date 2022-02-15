@@ -46,6 +46,8 @@ VARIABLES = {
     "os.environ.get('ISAAC_SDK_PATH', '')",
     'MAP_PATH':
     "self.config_env['map_path']",
+    'ROBOT_PATH':
+    "os.path.dirname(self.config_robot['_file_path'])",
     'SIM_PATH':
     "os.environ.get('BENCHBOT_SIMULATOR_PATH', '')",
     'START_POSE':
