@@ -41,19 +41,19 @@ TIMEOUT_STARTUP = 9000000000000
 
 VARIABLES = {
     'ENVS_PATH':
-    "os.path.dirname(self.config_env['_file_path'])",
+        "os.path.dirname(self.config_env['_file_path'])",
     'ISAAC_PATH':
-    "os.environ.get('ISAAC_SDK_PATH', '')",
+        "os.environ.get('ISAAC_SDK_PATH', '')",
     'MAP_PATH':
-    "self.config_env['map_path']",
+        "self.config_env['map_path']",
     'ROBOT_PATH':
-    "os.path.dirname(self.config_robot['_file_path'])",
+        "os.path.dirname(self.config_robot['_file_path'])",
     'SIM_PATH':
-    "os.environ.get('BENCHBOT_SIMULATOR_PATH', '')",
+        "os.environ.get('BENCHBOT_SIMULATOR_PATH', '')",
     'START_POSE':
-    "self.config_env['start_pose']",
+        "self.config_env['start_pose']",
     'OBJECT_LABELS':
-    'str(json.dumps([{"name": lbl.encode("ascii")} for lbl in self.config_env["object_labels"]]))'
+        'str(json.dumps([{"name": lbl.encode("ascii")} for lbl in self.config_env["object_labels"]]))'
 }
 
 _CMD_DELETE_FILE = 'rm -f $FILENAME'
@@ -74,6 +74,7 @@ def _to_simple_dict(data):
 
 
 class ControllerInstance(object):
+
     def __init__(self, config_robot, config_env, ros_subs):
         self.config_robot = config_robot
         self.config_env = config_env
@@ -162,8 +163,8 @@ class ControllerInstance(object):
             time.sleep(0.25)
             if not self.health_check(check_running=False):
                 return False
-            elif (time.time() - start_time > TIMEOUT_STARTUP
-                  and not self.health_check()):
+            elif (time.time() - start_time > TIMEOUT_STARTUP and
+                  not self.health_check()):
                 print("\nROBOT WAS NOT DETECTED TO BE RUNNING AFTER %ss (no "
                       "data on ROS TOPICS). DUMPING LOGS FOR ALL COMMANDS..." %
                       TIMEOUT_STARTUP)
@@ -218,6 +219,7 @@ class ControllerInstance(object):
 
 
 class RobotController(object):
+
     def __init__(self, port=10000, auto_start=True):
         self.robot_address = 'http://0.0.0.0:' + str(port)
 
@@ -290,6 +292,7 @@ class RobotController(object):
                 1 < len(self.config['environments']) else 0)
 
     def _generate_subscriber_callback(self, connection_name):
+
         def __cb(data):
             if (self.connections[connection_name]['type'] ==
                     CONN_ROSCACHE_TO_API):
@@ -397,9 +400,9 @@ class RobotController(object):
         def __is_finished():
             return flask.jsonify({
                 'is_finished':
-                (False if 'trajectory_pose_next' not in self.state else
-                 self.state['trajectory_pose_next'] >= len(
-                     self.state['trajectory_poses']))
+                    (False if 'trajectory_pose_next' not in self.state else
+                     self.state['trajectory_pose_next'] >= len(
+                         self.state['trajectory_poses']))
             })
 
         @robot_flask.route('/is_running', methods=['GET'])
@@ -449,13 +452,13 @@ class RobotController(object):
             try:
                 return flask.jsonify({
                     'name':
-                    self.config['environments'][
-                        self.state['selected_environment']]['name'],
+                        self.config['environments']
+                        [self.state['selected_environment']]['name'],
                     'variant':
-                    self.config['environments'][
-                        self.state['selected_environment']]['variant'],
+                        self.config['environments']
+                        [self.state['selected_environment']]['variant'],
                     'number':
-                    self.state['selected_environment']
+                        self.state['selected_environment']
                 })
             except Exception as e:
                 rospy.logerr(e)
@@ -500,10 +503,10 @@ class RobotController(object):
 
         # Copy in the merged dicts
         self.config = {
-            'environments':
-            [DEFAULT_CONFIG_ENV.copy() for e in config['environments']],
-            'robot':
-            DEFAULT_CONFIG_ROBOT.copy(),
+            'environments': [
+                DEFAULT_CONFIG_ENV.copy() for e in config['environments']
+            ],
+            'robot': DEFAULT_CONFIG_ROBOT.copy(),
             'task': {}
         }
         for k in self.config.keys():
@@ -530,13 +533,13 @@ class RobotController(object):
 
     def start(self):
         self.state = {
-            k: v
-            for k, v in self.state.items() if k in DEFAULT_STATE
+            k: v for k, v in self.state.items() if k in DEFAULT_STATE
         }
         self.instance = ControllerInstance(
             self.config['robot'],
             self.config['environments'][self.state['selected_environment']], [
-                c['ros'] for c in self.connections.values()
+                c['ros']
+                for c in self.connections.values()
                 if c['type'] == CONN_ROS_TO_API and c['ros'] != None
             ])
         self.instance.start()
