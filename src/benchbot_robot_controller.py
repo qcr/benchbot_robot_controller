@@ -96,7 +96,7 @@ class ControllerInstance(object):
         if any(fails):
             i = fails.index(True)
             print("\nTHE PROCESS STARTED BY THE FOLLOWING "
-                  "COMMAND HAS CRASHED:")
+                  "COMMAND HAS EXITED EARLY:")
             print("\t%s" % self._cmds[i])
             print("\nDUMPING LOGGED OUTPUT:")
             with open(os.path.join(self.config_robot['logs_dir'], str(i)),
