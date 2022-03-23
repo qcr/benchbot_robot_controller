@@ -1,4 +1,5 @@
 import numpy as np
+import ros_numpy
 import rospy
 from scipy.spatial.transform import Rotation as Rot
 
