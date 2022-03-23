@@ -6,7 +6,7 @@ from scipy.spatial.transform import Rotation as Rot
 from geometry_msgs.msg import Twist
 
 from spatialmath import SE3, UnitQuaternion
-from spatialmath_ros import tf_msg_to_SE3
+from spatialmath_ros import SE3_to_SE2, tf_msg_to_SE3
 
 _DEFAULT_SPEED_FACTOR = 1
 
@@ -20,6 +20,9 @@ _MOVE_ANGLE_K = 3
 _MOVE_POSE_K_RHO = 0.7
 _MOVE_POSE_K_ALPHA = 7.5
 _MOVE_POSE_K_BETA = -3
+
+_MOVE_POSE_LINEAR_LIMITS = [-0.2, 0.5]
+_MOVE_POSE_ANGULAR_LIMIT = 0.3
 
 
 def __pi_wrap(angle):
@@ -100,40 +103,51 @@ def _move_to_angle(goal, publisher, controller):
 def _move_to_pose(goal, publisher, controller):
     # Servo to desired pose using control described in Robotics, Vision, &
     # Control 2nd Ed (Corke, p. 108)
-    # NOTE we also had to handle adjusting alpha correctly for reversing
-    # rho = distance from current to goal
-    # alpha = angle of goal vector in vehicle frame
-    # beta = angle between current yaw & desired yaw
+    # (same variables used, but we add gamma to denote error in robot's
+    # heading)
+    g = SE3_to_SE2(goal)
+
+    rho = None
+    gamma = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while not controller.instance.is_collided():
+    while not controller.instance.is_collided() and (rho is None or
+                                                     rho > _MOVE_TOL_DIST):
         # Get latest position error
-        current = _current_pose(controller)
-        rho = __dist_from_a_to_b(current, goal)
-        alpha = __pi_wrap(__ang_to_b(current, goal) - __yaw(current))
-        beta = __pi_wrap(__yaw(goal) - __ang_to_b(current, goal))
+        current = SE3_to_SE2(_current_pose(controller))
+        error = SE3_to_SE2(current.inv()) * g
+        backwards = np.abs(np.arctan2(error.t[1], error.t[0])) > np.pi / 2
 
-        # Identify if the goal is behind us, & appropriately transform the
-        # angles to reflect that we will reverse to the goal
-        backwards = np.abs(__ang_to_b_wrt_a(current, goal)) > np.pi / 2
+        # Calculate values used in the controller
+        rho = np.linalg.norm(error.t)
+        alpha = np.arctan2(*np.flip(error.t))
+        beta = __pi_wrap(-current.theta() - alpha + g.theta())
+
+        # Construct velocity message
         if backwards:
-            alpha = __pi_wrap(alpha + np.pi)
-            beta = __pi_wrap(beta + np.pi)
+            vel_msg.linear.x = -1 * _MOVE_POSE_K_RHO * rho
+            vel_msg.angular.z = (
+                _MOVE_POSE_K_ALPHA * __pi_wrap(alpha + np.pi) +
+                _MOVE_POSE_K_BETA * __pi_wrap(beta + np.pi))
+        else:
+            vel_msg.linear.x = _MOVE_POSE_K_RHO * rho
+            vel_msg.angular.z = (_MOVE_POSE_K_ALPHA * alpha +
+                                 _MOVE_POSE_K_BETA * beta)
 
-        # If within distance tolerance, correct angle & quit (the controller
-        # aims to drive the robot in at the correct angle, if it is already
-        # "in" but the angle is wrong, it will get stuck!)
-        # print("rho: %f, alpha: %f, beta: %f, back: %d" %
-        #       (rho, alpha, beta, backwards))
-        if rho < _MOVE_TOL_DIST:
-            _move_to_angle(goal, publisher, controller)
-            break
+        # Apply per-robot speed factors, and speed limits
+        vel_msg.linear.x = _move_speed_factor(controller) * vel_msg.linear.x
+        vel_msg.angular.z = _move_speed_factor(controller) * vel_msg.angular.z
 
-        # Construct & send velocity msg
-        vel_msg.linear.x = (_move_speed_factor(controller) *
-                            (-1 if backwards else 1) * _MOVE_POSE_K_RHO * rho)
-        vel_msg.angular.z = _move_speed_factor(controller) * (
-            _MOVE_POSE_K_ALPHA * alpha + _MOVE_POSE_K_BETA * beta)
+        vel_msg.linear.x = (_MOVE_POSE_LINEAR_LIMITS[1] if
+                            vel_msg.linear.x > _MOVE_POSE_LINEAR_LIMITS[1] else
+                            _MOVE_POSE_LINEAR_LIMITS[0] if vel_msg.linear.x <
+                            _MOVE_POSE_LINEAR_LIMITS[0] else vel_msg.linear.x)
+        vel_msg.angular.z = (
+            _MOVE_POSE_K_ALPHA
+            if vel_msg.angular.z > _MOVE_POSE_K_ALPHA else -_MOVE_POSE_K_ALPHA
+            if vel_msg.angular.z < -_MOVE_POSE_K_ALPHA else vel_msg.angular.z)
+
+        # Publish velocity
         publisher.publish(vel_msg)
         hz_rate.sleep()
     publisher.publish(Twist())
