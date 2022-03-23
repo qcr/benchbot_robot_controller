@@ -36,7 +36,7 @@ CONN_ROS_TO_API = 'ros_to_api'
 CONN_ROSCACHE_TO_API = 'roscache_to_api'
 CONNS = [CONN_API_TO_ROS, CONN_ROS_TO_API, CONN_ROSCACHE_TO_API]
 
-TIMEOUT_ROS_PING = 0.5
+TIMEOUT_ROS_PING = 5
 TIMEOUT_STARTUP = 9000000000000
 
 VARIABLES = {
@@ -130,6 +130,7 @@ class ControllerInstance(object):
                                            s.data_class,
                                            timeout=TIMEOUT_ROS_PING)
             except Exception as e:
+                rospy.loginfo("FAILURE: %s" % e)
                 return False
             return True
 
