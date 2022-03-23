@@ -51,7 +51,7 @@ def _get_noisy_pose(controller, child_frame):
         controller.tf_buffer.lookup_transform('odom', child_frame,
                                               rospy.Time()))
     # Noisy child should be init pose + odom_t_child
-    return world_t_init_pose, odom_t_child
+    return world_t_init_pose * odom_t_child
 
 
 def _current_pose(controller):
