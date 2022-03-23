@@ -5,6 +5,7 @@ from scipy.spatial.transform import Rotation as Rot
 
 from geometry_msgs.msg import Twist
 
+from spatialmath import UnitQuaternion
 from spatialmath_ros import tf_msg_to_SE3
 
 _DEFAULT_SPEED_FACTOR = 1
@@ -162,9 +163,9 @@ def create_pose_list(data, controller):
     return {
         'camera' if 'left_camera' in k else k: {
             'parent_frame': controller.config['robot']['global_frame'],
-            'translation_xyz': v[:-1, -1],
-            'rotation_rpy': Rot.from_dcm(v[:-1, :-1]).as_euler('XYZ'),
-            'rotation_xyzw': Rot.from_dcm(v[:-1, :-1]).as_quat()
+            'translation_xyz': v.t,
+            'rotation_rpy': v.rpy(),
+            'rotation_xyzw': UnitQuaternion(v.rpy()).vec_xyzs
         } for k, v in tfs.items()
     }
 
