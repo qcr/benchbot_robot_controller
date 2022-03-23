@@ -5,7 +5,7 @@ from scipy.spatial.transform import Rotation as Rot
 
 from geometry_msgs.msg import Twist
 
-from spatialmath import UnitQuaternion
+from spatialmath import SE3, UnitQuaternion
 from spatialmath_ros import tf_msg_to_SE3
 
 _DEFAULT_SPEED_FACTOR = 1
@@ -51,7 +51,7 @@ def _get_noisy_pose(controller, child_frame):
         controller.tf_buffer.lookup_transform('odom', child_frame,
                                               rospy.Time()))
     # Noisy child should be init pose + odom_t_child
-    return np.matmul(world_t_init_pose, odom_t_child)
+    return world_t_init_pose, odom_t_child
 
 
 def _current_pose(controller):
@@ -216,22 +216,15 @@ def encode_laserscan(data, controller):
 def move_angle(data, publisher, controller):
     # Derive a corresponding goal pose & send the robot there
     _move_to_pose(
-        np.matmul(
-            _current_pose(controller),
-            __transrpy_to_tf_matrix([0, 0, 0], [
-                0, 0,
-                __pi_wrap(np.deg2rad(__safe_dict_get(data, 'angle', 0)))
-            ])), publisher, controller)
+        _current_pose(controller) *
+        SE3.Rz(__safe_dict_get(data, 'angle', 0), unit='deg'), publisher,
+        controller)
 
 
 def move_distance(data, publisher, controller):
     # Derive a corresponding goal pose & send the robot there
-    _move_to_pose(
-        np.matmul(
-            _current_pose(controller),
-            __transrpy_to_tf_matrix(
-                [__safe_dict_get(data, 'distance', 0), 0, 0], [0, 0, 0])),
-        publisher, controller)
+    _move_to_pose(_current_pose * SE3.Tx(__safe_dict_get(data, 'distance', 0)),
+                  publisher, controller)
 
 
 def move_next(data, publisher, controller):
@@ -243,12 +236,10 @@ def move_next(data, publisher, controller):
                 controller.state['selected_environment']]['trajectory_poses']
 
     # Servo to the goal pose
+    t = controller.state['trajectory_poses'][
+        controller.state['trajectory_pose_next']]
     _move_to_pose(
-        __pose_vector_to_tf_matrix(
-            np.take(
-                np.array(controller.state['trajectory_poses'][
-                    controller.state['trajectory_pose_next']]),
-                [1, 2, 3, 0, 4, 5, 6])), publisher, controller)
+        SE3(t[4::]) * UnitQuaternion(t[0], t[1:4]), publisher, controller)
 
     # Register that we completed this goal
     controller.state['trajectory_pose_next'] += 1
