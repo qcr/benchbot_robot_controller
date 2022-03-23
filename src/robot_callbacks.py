@@ -82,11 +82,12 @@ def _move_speed_factor(controller):
 
 def _move_to_angle(goal, publisher, controller):
     # Servo until orientation matches that of the requested goal
+    g = SE3_to_SE2(goal)
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
     while not controller.instance.is_collided():
         # Get latest orientation error
-        orientation_error = __yaw_b_wrt_a(_current_pose(controller), goal)
+        orientation_error = (SE3_to_SE2(_current_pose).inv() * g).rpy()[2]
 
         # Bail if exit conditions are met
         if np.abs(orientation_error) < _MOVE_TOL_YAW:
@@ -108,7 +109,6 @@ def _move_to_pose(goal, publisher, controller):
     g = SE3_to_SE2(goal)
 
     rho = None
-    gamma = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
     while not controller.instance.is_collided() and (rho is None or
