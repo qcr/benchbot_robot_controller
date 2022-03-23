@@ -31,8 +31,8 @@ def __safe_dict_get(d, key, default):
 def _define_initial_pose(controller):
     # Check if we need to define initial pose (clean state and not already initialised)
     if not controller.instance.is_dirty(
-    ) and 'initial_pose_tf_mat' not in controller.state.keys():
-        controller.state['initial_pose_tf_mat'] = tf_msg_to_SE2(
+    ) and 'initial_pose' not in controller.state.keys():
+        controller.state['initial_pose'] = tf_msg_to_SE2(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'],
                 controller.config['robot']['robot_frame'], rospy.Time()))
@@ -41,7 +41,7 @@ def _define_initial_pose(controller):
 def _get_noisy_pose(controller, child_frame):
     # Assumes initial pose of the robot has already been set
     # Get the initial pose of the robot within the world
-    world_t_init_pose = controller.state['initial_pose_tf_mat']
+    world_t_init_pose = controller.state['initial_pose']
 
     # Get the pose of child_frame w.r.t odom
     # TODO check if we should change odom from fixed name to definable
@@ -155,7 +155,7 @@ def create_pose_list(data, controller):
 
     # Add the initial pose if desired (not in tf tree)
     if 'initial_pose' in controller.config['robot']['poses']:
-        tfs['initial_pose'] = controller.state['initial_pose_tf_mat']
+        tfs['initial_pose'] = controller.state['initial_pose']
 
     # TODO REMOVE HACK FOR FIXING CAMERA NAME!!!
     return {
