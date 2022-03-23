@@ -1,12 +1,10 @@
-import base64
 import numpy as np
-import pprint
-import ros_numpy
 import rospy
 from scipy.spatial.transform import Rotation as Rot
 
-from geometry_msgs.msg import Twist, Vector3
-# from benchbot_msgs import isaac_segment_img
+from geometry_msgs.msg import Twist
+
+from spatialmath_ros import tf_msg_to_SE2
 
 _DEFAULT_SPEED_FACTOR = 1
 
@@ -53,16 +51,6 @@ def __pose_vector_to_tf_matrix(pv):
 
 def __safe_dict_get(d, key, default):
     return d[key] if type(d) is dict and key in d else default
-
-
-def __tf_ros_stamped_to_tf_matrix(tfs):
-    # ROS... how do you still not have a method for this in 2020...
-    return __pose_vector_to_tf_matrix([
-        tfs.transform.rotation.x, tfs.transform.rotation.y,
-        tfs.transform.rotation.z, tfs.transform.rotation.w,
-        tfs.transform.translation.x, tfs.transform.translation.y,
-        tfs.transform.translation.z
-    ])
 
 
 def __tr_b_wrt_a(matrix_a, matrix_b):
@@ -123,11 +111,10 @@ def _define_initial_pose(controller):
     # Check if we need to define initial pose (clean state and not already initialised)
     if not controller.instance.is_dirty(
     ) and 'initial_pose_tf_mat' not in controller.state.keys():
-        controller.state[
-            'initial_pose_tf_mat'] = __tf_ros_stamped_to_tf_matrix(
-                controller.tf_buffer.lookup_transform(
-                    controller.config['robot']['global_frame'],
-                    controller.config['robot']['robot_frame'], rospy.Time()))
+        controller.state['initial_pose_tf_mat'] = tf_msg_to_SE2(
+            controller.tf_buffer.lookup_transform(
+                controller.config['robot']['global_frame'],
+                controller.config['robot']['robot_frame'], rospy.Time()))
 
 
 def _get_noisy_pose(controller, child_frame):
@@ -137,7 +124,7 @@ def _get_noisy_pose(controller, child_frame):
 
     # Get the pose of child_frame w.r.t odom
     # TODO check if we should change odom from fixed name to definable
-    odom_t_child = __tf_ros_stamped_to_tf_matrix(
+    odom_t_child = tf_msg_to_SE2(
         controller.tf_buffer.lookup_transform('odom', child_frame,
                                               rospy.Time()))
     # Noisy child should be init pose + odom_t_child
@@ -152,7 +139,7 @@ def _current_pose(controller):
     if 'ground_truth' in controller.config['task']['name']:
         # TF tree by default provides poses such that robot pose is GT
         # Just return the transform in the tree
-        return __tf_ros_stamped_to_tf_matrix(
+        return tf_msg_to_SE2(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'],
                 controller.config['robot']['robot_frame'], rospy.Time()))
@@ -236,12 +223,13 @@ def create_pose_list(data, controller):
     # Check what mode we are in for poses (ground_truth or noisy)
     gt_mode = controller.config['task']['localisation'] != 'noisy'
     tfs = {
-        p: __tf_ros_stamped_to_tf_matrix(
+        p: tf_msg_to_SE2(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'], p, rospy.Time()))
         if gt_mode else _get_noisy_pose(controller, p)
         # If we are in noisy mode, poses become initial pose plus odom->target
-        for p in controller.config['robot']['poses'] if p != 'initial_pose'
+        for p in controller.config['robot']['poses']
+        if p != 'initial_pose'
     }
 
     # Add the initial pose if desired (not in tf tree)
@@ -255,8 +243,7 @@ def create_pose_list(data, controller):
             'translation_xyz': v[:-1, -1],
             'rotation_rpy': Rot.from_dcm(v[:-1, :-1]).as_euler('XYZ'),
             'rotation_xyzw': Rot.from_dcm(v[:-1, :-1]).as_quat()
-        }
-        for k, v in tfs.items()
+        } for k, v in tfs.items()
     }
 
 
@@ -292,14 +279,14 @@ def encode_segment_image(data, controller):
 def encode_laserscan(data, controller):
     return {
         'scans':
-        np.array([[
-            data.ranges[i],
-            __pi_wrap(data.angle_min + i * data.angle_increment)
-        ] for i in range(0, len(data.ranges))]),
+            np.array([[
+                data.ranges[i],
+                __pi_wrap(data.angle_min + i * data.angle_increment)
+            ] for i in range(0, len(data.ranges))]),
         'range_min':
-        data.range_min,
+            data.range_min,
         'range_max':
-        data.range_max
+            data.range_max
     }
 
 
