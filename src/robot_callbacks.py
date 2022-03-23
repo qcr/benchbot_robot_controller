@@ -5,7 +5,7 @@ from scipy.spatial.transform import Rotation as Rot
 
 from geometry_msgs.msg import Twist
 
-from spatialmath_ros import tf_msg_to_SE2
+from spatialmath_ros import tf_msg_to_SE3
 
 _DEFAULT_SPEED_FACTOR = 1
 
@@ -33,7 +33,7 @@ def _define_initial_pose(controller):
     # Check if we need to define initial pose (clean state and not already initialised)
     if not controller.instance.is_dirty(
     ) and 'initial_pose' not in controller.state.keys():
-        controller.state['initial_pose'] = tf_msg_to_SE2(
+        controller.state['initial_pose'] = tf_msg_to_SE3(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'],
                 controller.config['robot']['robot_frame'], rospy.Time()))
@@ -46,7 +46,7 @@ def _get_noisy_pose(controller, child_frame):
 
     # Get the pose of child_frame w.r.t odom
     # TODO check if we should change odom from fixed name to definable
-    odom_t_child = tf_msg_to_SE2(
+    odom_t_child = tf_msg_to_SE3(
         controller.tf_buffer.lookup_transform('odom', child_frame,
                                               rospy.Time()))
     # Noisy child should be init pose + odom_t_child
@@ -61,7 +61,7 @@ def _current_pose(controller):
     if 'ground_truth' in controller.config['task']['name']:
         # TF tree by default provides poses such that robot pose is GT
         # Just return the transform in the tree
-        return tf_msg_to_SE2(
+        return tf_msg_to_SE3(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'],
                 controller.config['robot']['robot_frame'], rospy.Time()))
@@ -145,7 +145,7 @@ def create_pose_list(data, controller):
     # Check what mode we are in for poses (ground_truth or noisy)
     gt_mode = controller.config['task']['localisation'] != 'noisy'
     tfs = {
-        p: tf_msg_to_SE2(
+        p: tf_msg_to_SE3(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'], p, rospy.Time()))
         if gt_mode else _get_noisy_pose(controller, p)
