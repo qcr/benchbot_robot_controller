@@ -386,7 +386,8 @@ class RobotController(object):
             except Exception as e:
                 rospy.logerr(
                     "Robot Controller failed on processing connection "
-                    "'%s' with error:\n%s" % (connection, repr(e)))
+                    "'%s' with error:\n%s\n%s" %
+                    (connection, repr(e), traceback.format_exc()))
                 flask.abort(500)
 
         @robot_flask.route('/is_collided', methods=['GET'])
