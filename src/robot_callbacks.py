@@ -62,7 +62,7 @@ def __xyzwXYZ_to_SE3(x, y, z, w, X, Y, Z):
 
 
 def __yaw_from_SE2(pose):
-    return np.arccos(pose[0, 0])
+    return np.arctan2(pose[1, 0], pose[0, 0])
 
 
 def __pi_wrap(angle):
