@@ -158,11 +158,11 @@ def _move_to_pose(goal, publisher, controller):
         # Get latest position error
         current = __SE3_to_SE2(_current_pose(controller))
         error = np.matmul(np.linalg.inv(current), g)
-        backwards = np.abs(np.arctan2(error[1, 3], error[0, 3])) > np.pi / 2
+        backwards = np.abs(np.arctan2(error[1, 2], error[0, 2])) > np.pi / 2
 
         # Calculate values used in the controller
-        rho = np.linalg.norm(error[0:2, 3])
-        alpha = np.arctan2(error[1, 3], error[0, 3])
+        rho = np.linalg.norm(error[0:2, 2])
+        alpha = np.arctan2(error[1, 2], error[0, 2])
         beta = __pi_wrap(-__yaw_from_SE2(current) - alpha + __yaw_from_SE2(g))
 
         # Construct velocity message
