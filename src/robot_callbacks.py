@@ -133,9 +133,15 @@ def _move_to_angle(goal, publisher, controller):
         current = __SE3_to_SE2(_current_pose(controller))
         gamma = __yaw_from_SE2(np.matmul(np.linalg.inv(current), g))
 
-        # Construct & send velocity msg
+        # Construct angular msg, with velocities clamped
         vel_msg.angular.z = (_move_speed_factor(controller) * _MOVE_ANGLE_K *
                              gamma)
+        vel_msg.angular.z = (
+            _MOVE_ANGULAR_LIMIT if vel_msg.angular.z > _MOVE_ANGULAR_LIMIT else
+            -_MOVE_ANGULAR_LIMIT
+            if vel_msg.angular.z < -_MOVE_ANGULAR_LIMIT else vel_msg.angular.z)
+
+        # Send our velocity msg
         publisher.publish(vel_msg)
         hz_rate.sleep()
     publisher.publish(Twist())
