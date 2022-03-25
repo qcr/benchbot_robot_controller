@@ -192,9 +192,11 @@ def _move_to_pose(goal, publisher, controller):
             -_MOVE_ANGULAR_LIMIT
             if vel_msg.angular.z < -_MOVE_ANGULAR_LIMIT else vel_msg.angular.z)
 
-        # Publish velocity
-        publisher.publish(vel_msg)
-        hz_rate.sleep()
+        # Publish velocity (don't move if we're already there!)
+        if (rho > _MOVE_TOL_DIST):
+            publisher.publish(vel_msg)
+            hz_rate.sleep()
+    _move_to_angle(goal, publisher, controller)
     publisher.publish(Twist())
 
 
