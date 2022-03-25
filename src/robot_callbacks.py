@@ -31,9 +31,9 @@ def __rpy_from_SE3(pose):
 
 
 def __SE3_from_translation(x=0, y=0, z=0):
-    x = np.eye(4)
-    x[0:3, 3] = np.array([x, y, z])
-    return x
+    p = np.eye(4)
+    p[0:3, 3] = np.array([x, y, z])
+    return p
 
 
 def __SE3_from_yaw(yaw):
