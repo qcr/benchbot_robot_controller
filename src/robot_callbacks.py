@@ -18,8 +18,8 @@ _MOVE_POSE_K_RHO = 0.75
 _MOVE_POSE_K_ALPHA = 4
 _MOVE_POSE_K_BETA = -1.5
 
-_MOVE_POSE_LINEAR_LIMITS = [-0.2, 0.5]
-_MOVE_POSE_ANGULAR_LIMIT = 0.3
+_MOVE_LINEAR_LIMITS = [-0.2, 0.5]
+_MOVE_ANGULAR_LIMIT = 0.3
 
 
 def __quat_from_SE3(pose):
@@ -177,14 +177,14 @@ def _move_to_pose(goal, publisher, controller):
         vel_msg.linear.x = _move_speed_factor(controller) * vel_msg.linear.x
         vel_msg.angular.z = _move_speed_factor(controller) * vel_msg.angular.z
 
-        vel_msg.linear.x = (_MOVE_POSE_LINEAR_LIMITS[1] if
-                            vel_msg.linear.x > _MOVE_POSE_LINEAR_LIMITS[1] else
-                            _MOVE_POSE_LINEAR_LIMITS[0] if vel_msg.linear.x <
-                            _MOVE_POSE_LINEAR_LIMITS[0] else vel_msg.linear.x)
-        vel_msg.angular.z = (_MOVE_POSE_K_ALPHA
-                             if vel_msg.angular.z > _MOVE_POSE_ANGULAR_LIMIT
-                             else -_MOVE_POSE_K_ALPHA if vel_msg.angular.z <
-                             -_MOVE_POSE_ANGULAR_LIMIT else vel_msg.angular.z)
+        vel_msg.linear.x = (
+            _MOVE_LINEAR_LIMITS[1] if vel_msg.linear.x > _MOVE_LINEAR_LIMITS[1]
+            else _MOVE_LINEAR_LIMITS[0]
+            if vel_msg.linear.x < _MOVE_LINEAR_LIMITS[0] else vel_msg.linear.x)
+        vel_msg.angular.z = (
+            _MOVE_ANGULAR_LIMIT if vel_msg.angular.z > _MOVE_ANGULAR_LIMIT else
+            -_MOVE_ANGULAR_LIMIT
+            if vel_msg.angular.z < -_MOVE_ANGULAR_LIMIT else vel_msg.angular.z)
 
         # Publish velocity
         publisher.publish(vel_msg)
