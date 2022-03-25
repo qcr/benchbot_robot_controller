@@ -5,9 +5,6 @@ from scipy.spatial.transform import Rotation as Rot
 
 from geometry_msgs.msg import Twist
 
-from spatialmath import SE3, UnitQuaternion
-from spatialmath_ros import SE3_to_SE2, tf_msg_to_SE3
-
 _DEFAULT_SPEED_FACTOR = 1
 
 _MOVE_HZ = 20
