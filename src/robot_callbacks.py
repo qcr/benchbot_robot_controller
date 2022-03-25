@@ -120,20 +120,37 @@ def _move_speed_factor(controller):
             in controller.config['robot'] else _DEFAULT_SPEED_FACTOR)
 
 
-def _move_to_pose(goal, publisher, controller):
-    # Servo to desired pose using control described in Robotics, Vision, &
-    # Control 2nd Ed (Corke, p. 108)
-    # (same variables used, but we add gamma to denote error in robot's
-    # heading)
+def _move_to_angle(goal, publisher, controller):
+    # Servo until orientation matches that of the requested goal
     g = __SE3_to_SE2(goal)
 
     gamma = None
-    rho = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
     while not controller.instance.is_collided() and (
-            rho is None or rho > _MOVE_TOL_DIST or gamma is None or
-            np.abs(gamma) > _MOVE_TOL_YAW):
+            gamma is None or np.abs(gamma) > _MOVE_TOL_YAW):
+        # Get latest orientation error
+        current = __SE3_to_SE2(_current_pose(controller))
+        gamma = __yaw_from_SE2(np.matmul(np.linalg.inv(current), g))
+
+        # Construct & send velocity msg
+        vel_msg.angular.z = (_move_speed_factor(controller) * _MOVE_ANGLE_K *
+                             gamma)
+        publisher.publish(vel_msg)
+        hz_rate.sleep()
+    publisher.publish(Twist())
+
+
+def _move_to_pose(goal, publisher, controller):
+    # Servo to desired pose using control described in Robotics, Vision, &
+    # Control 2nd Ed (Corke, p. 108)
+    g = __SE3_to_SE2(goal)
+
+    rho = None
+    vel_msg = Twist()
+    hz_rate = rospy.Rate(_MOVE_HZ)
+    while not controller.instance.is_collided() and (rho is None or
+                                                     rho > _MOVE_TOL_DIST):
         # Get latest position error
         current = __SE3_to_SE2(_current_pose(controller))
         error = np.matmul(np.linalg.inv(current), g)
@@ -142,8 +159,6 @@ def _move_to_pose(goal, publisher, controller):
         rho = np.linalg.norm(error[0:2, 2])
         alpha = np.arctan2(error[1, 2], error[0, 2])
         beta = __pi_wrap(-__yaw_from_SE2(current) - alpha + __yaw_from_SE2(g))
-
-        gamma = __yaw_from_SE2(error)
 
         # Construct velocity message
         backwards = (rho > _MOVE_TOL_DIST and
