@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from __future__ import print_function
 
@@ -46,8 +46,9 @@ def check_map_topic(topic_name):
 
 
 def get_map(topic):
-    return rospy.wait_for_message(
-        topic, OccupancyGrid, timeout=rospy.Duration(1))
+    return rospy.wait_for_message(topic,
+                                  OccupancyGrid,
+                                  timeout=rospy.Duration(1))
 
 
 if __name__ == "__main__":
