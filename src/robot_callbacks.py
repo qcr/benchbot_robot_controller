@@ -303,8 +303,8 @@ def move_next(data, publisher, controller):
     # Servo to the goal pose
     t = controller.state['trajectory_poses'][
         controller.state['trajectory_pose_next']]
-    _move_to_pose(__xyzwXYZ_to_SE3(*t[[1, 2, 3, 0, 4, 5, 6]]), publisher,
-                  controller)
+    _move_to_pose(__xyzwXYZ_to_SE3(*np.array(t)[[1, 2, 3, 0, 4, 5, 6]]),
+                  publisher, controller)
 
     # Register that we completed this goal
     controller.state['trajectory_pose_next'] += 1
