@@ -6,3 +6,4 @@ numpy
 pyyaml
 requests
 scipy
+transforms3d
