@@ -127,8 +127,9 @@ def _move_to_angle(goal, publisher, controller):
     hz_rate = rospy.Rate(_MOVE_HZ)
     while not controller.instance.is_collided():
         # Get latest orientation error
-        orientation_error = __yaw_from_SE2(
-            np.matmul(np.linalg.inv(__SE3_to_SE2(_current_pose)), g))
+        current = __SE3_to_SE2(_current_pose(controller))
+        orientation_error = __yaw_from_SE2(np.matmul(np.linalg.inv(current),
+                                                     g))
 
         # Bail if exit conditions are met
         if np.abs(orientation_error) < _MOVE_TOL_YAW:
@@ -156,7 +157,7 @@ def _move_to_pose(goal, publisher, controller):
                                                      rho > _MOVE_TOL_DIST):
         # Get latest position error
         current = __SE3_to_SE2(_current_pose(controller))
-        error = np.matmul(np.linalg.inv(__SE3_to_SE2(current)), g)
+        error = np.matmul(np.linalg.inv(current), g)
         backwards = np.abs(np.arctan2(error[1, 3], error[0, 3])) > np.pi / 2
 
         # Calculate values used in the controller
