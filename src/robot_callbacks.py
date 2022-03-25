@@ -51,8 +51,9 @@ def __SE3_to_SE2(pose):
 def __tf_msg_to_SE3(tf_msg):
     t = tf_msg.transform.translation
     r = tf_msg.transform.rotation
-    t3.affines.compose([t.x, t.y, t.z],
-                       t3.quaternions.quat2mat([r.w, r.x, r.y, r.z]), [1] * 3)
+    return t3.affines.compose([t.x, t.y, t.z],
+                              t3.quaternions.quat2mat([r.w, r.x, r.y, r.z]),
+                              [1] * 3)
 
 
 def __xyzwXYZ_to_SE3(x, y, z, w, X, Y, Z):
