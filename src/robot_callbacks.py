@@ -1,7 +1,7 @@
 import numpy as np
 import ros_numpy
 import rospy
-from scipy.spatial.transform import Rotation as Rot
+import transforms3d as t3
 
 from geometry_msgs.msg import Twist
 
@@ -22,6 +22,48 @@ _MOVE_POSE_LINEAR_LIMITS = [-0.2, 0.5]
 _MOVE_POSE_ANGULAR_LIMIT = 0.3
 
 
+def __quat_from_SE3(pose):
+    return t3.quaternions.mat2quat(pose[0:3, 0:3])[[1, 2, 3, 0]]
+
+
+def __rpy_from_SE3(pose):
+    return t3.euler.mat2euler(pose[0:3, 0:3])
+
+
+def __SE3_from_translation(x=0, y=0, z=0):
+    x = np.eye(4)
+    x[0:3, 3] = np.array([x, y, z])
+    return x
+
+
+def __SE3_from_yaw(yaw):
+    x = np.eye(4)
+    x[0:3, 0:3] = t3.euler.euler2mat(0, 0, yaw)
+    return x
+
+
+def __SE3_to_SE2(pose):
+    y = t3.euler.mat2euler(pose[0:3, 0:3])[2]
+    return np.array([[np.cos(y), -np.sin(y), pose[0, 3]],
+                     [np.sin(y), np.cos(y), pose[1, 3]], [0, 0, 1]])
+
+
+def __tf_msg_to_SE3(tf_msg):
+    t = tf_msg.transform.translation
+    r = tf_msg.transform.rotation
+    t3.affines.compose([t.x, t.y, t.z],
+                       t3.quaternions.quat2mat([r.w, r.x, r.y, r.z]), [1] * 3)
+
+
+def __xyzwXYZ_to_SE3(x, y, z, w, X, Y, Z):
+    return t3.affines.compose([X, Y, Z], t3.quaternions.quat2mat([w, x, y, z]),
+                              [1] * 3)
+
+
+def __yaw_from_SE2(pose):
+    return np.arccos(pose[0, 0])
+
+
 def __pi_wrap(angle):
     return np.mod(angle + np.pi, 2 * np.pi) - np.pi
 
@@ -34,7 +76,7 @@ def _define_initial_pose(controller):
     # Check if we need to define initial pose (clean state and not already initialised)
     if not controller.instance.is_dirty(
     ) and 'initial_pose' not in controller.state.keys():
-        controller.state['initial_pose'] = tf_msg_to_SE3(
+        controller.state['initial_pose'] = __tf_msg_to_SE3(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'],
                 controller.config['robot']['robot_frame'], rospy.Time()))
@@ -47,7 +89,7 @@ def _get_noisy_pose(controller, child_frame):
 
     # Get the pose of child_frame w.r.t odom
     # TODO check if we should change odom from fixed name to definable
-    odom_t_child = tf_msg_to_SE3(
+    odom_t_child = __tf_msg_to_SE3(
         controller.tf_buffer.lookup_transform('odom', child_frame,
                                               rospy.Time()))
     # Noisy child should be init pose + odom_t_child
@@ -62,7 +104,7 @@ def _current_pose(controller):
     if 'ground_truth' in controller.config['task']['name']:
         # TF tree by default provides poses such that robot pose is GT
         # Just return the transform in the tree
-        return tf_msg_to_SE3(
+        return __tf_msg_to_SE3(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'],
                 controller.config['robot']['robot_frame'], rospy.Time()))
@@ -79,12 +121,13 @@ def _move_speed_factor(controller):
 
 def _move_to_angle(goal, publisher, controller):
     # Servo until orientation matches that of the requested goal
-    g = SE3_to_SE2(goal)
+    g = __SE3_to_SE2(goal)
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
     while not controller.instance.is_collided():
         # Get latest orientation error
-        orientation_error = (SE3_to_SE2(_current_pose).inv() * g).rpy()[2]
+        orientation_error = __yaw_from_SE2(
+            np.matmul(np.linalg.inv(__SE3_to_SE2(_current_pose)), g))
 
         # Bail if exit conditions are met
         if np.abs(orientation_error) < _MOVE_TOL_YAW:
@@ -103,7 +146,7 @@ def _move_to_pose(goal, publisher, controller):
     # Control 2nd Ed (Corke, p. 108)
     # (same variables used, but we add gamma to denote error in robot's
     # heading)
-    g = SE3_to_SE2(goal)
+    g = __SE3_to_SE2(goal)
 
     rho = None
     vel_msg = Twist()
@@ -111,14 +154,14 @@ def _move_to_pose(goal, publisher, controller):
     while not controller.instance.is_collided() and (rho is None or
                                                      rho > _MOVE_TOL_DIST):
         # Get latest position error
-        current = SE3_to_SE2(_current_pose(controller))
-        error = SE3_to_SE2(current.inv()) * g
-        backwards = np.abs(np.arctan2(error.t[1], error.t[0])) > np.pi / 2
+        current = __SE3_to_SE2(_current_pose(controller))
+        error = np.matmul(np.linalg.inv(__SE3_to_SE2(current)), g)
+        backwards = np.abs(np.arctan2(error[1, 3], error[0, 3])) > np.pi / 2
 
         # Calculate values used in the controller
-        rho = np.linalg.norm(error.t)
-        alpha = np.arctan2(*np.flip(error.t))
-        beta = __pi_wrap(-current.theta() - alpha + g.theta())
+        rho = np.linalg.norm(error[0:2, 3])
+        alpha = np.arctan2(error[1, 3], error[0, 3])
+        beta = __pi_wrap(-__yaw_from_SE2(current) - alpha + __yaw_from_SE2(g))
 
         # Construct velocity message
         if backwards:
@@ -157,7 +200,7 @@ def create_pose_list(data, controller):
     # Check what mode we are in for poses (ground_truth or noisy)
     gt_mode = controller.config['task']['localisation'] != 'noisy'
     tfs = {
-        p: tf_msg_to_SE3(
+        p: __tf_msg_to_SE3(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'], p, rospy.Time()))
         if gt_mode else _get_noisy_pose(controller, p)
@@ -174,9 +217,9 @@ def create_pose_list(data, controller):
     return {
         'camera' if 'left_camera' in k else k: {
             'parent_frame': controller.config['robot']['global_frame'],
-            'translation_xyz': v.t,
-            'rotation_rpy': v.rpy(),
-            'rotation_xyzw': UnitQuaternion(v.rpy()).vec_xyzs
+            'translation_xyz': v[0:3, 3],
+            'rotation_rpy': __rpy_from_SE3(v),
+            'rotation_xyzw': __quat_from_SE3(v)
         } for k, v in tfs.items()
     }
 
@@ -227,15 +270,19 @@ def encode_laserscan(data, controller):
 def move_angle(data, publisher, controller):
     # Derive a corresponding goal pose & send the robot there
     _move_to_pose(
-        _current_pose(controller) *
-        SE3.Rz(__safe_dict_get(data, 'angle', 0), unit='deg'), publisher,
-        controller)
+        np.matmul(
+            _current_pose(controller),
+            __SE3_from_yaw(np.deg2rad(__safe_dict_get(data, 'angle', 0)))),
+        publisher, controller)
 
 
 def move_distance(data, publisher, controller):
     # Derive a corresponding goal pose & send the robot there
-    _move_to_pose(_current_pose * SE3.Tx(__safe_dict_get(data, 'distance', 0)),
-                  publisher, controller)
+    _move_to_pose(
+        np.matmul(_current_pose(controller),
+                  __SE3_from_translation(__safe_dict_get(data, 'distance',
+                                                         0))), publisher,
+        controller)
 
 
 def move_next(data, publisher, controller):
@@ -249,8 +296,8 @@ def move_next(data, publisher, controller):
     # Servo to the goal pose
     t = controller.state['trajectory_poses'][
         controller.state['trajectory_pose_next']]
-    _move_to_pose(
-        SE3(t[4::]) * UnitQuaternion(t[0], t[1:4]), publisher, controller)
+    _move_to_pose(__xyzwXYZ_to_SE3(*t[[1, 2, 3, 0, 4, 5, 6]]), publisher,
+                  controller)
 
     # Register that we completed this goal
     controller.state['trajectory_pose_next'] += 1
