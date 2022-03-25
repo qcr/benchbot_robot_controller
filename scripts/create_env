@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 from __future__ import print_function
 
@@ -113,8 +113,8 @@ def check_for_tf(frame_a, frame_b):
         get_pose(frame_a, frame_b)
     except Exception as e:
         print("\t%sERROR: failed to find a current transform from "
-              "'%s' to '%s'. Exception:\n\t%s'" %
-              (Fore.RED, frame_a, frame_b, e))
+              "'%s' to '%s'. Exception:\n\t%s'" % (Fore.RED, frame_a, frame_b,
+                                                   e))
         sys.exit(1)
     print("\t%sDone.\n" % Fore.GREEN)
 
@@ -129,13 +129,13 @@ def get_pose(frame_a, frame_b):
         setup_tf()
     t = _tf_buff.lookup_transform(frame_a, frame_b, rospy.Time(0),
                                   rospy.Duration(1))
-    return Pose(position=t.transform.translation,
-                orientation=t.transform.rotation)
+    return Pose(
+        position=t.transform.translation, orientation=t.transform.rotation)
 
 
 def output_filename(data):
-    return ("./%s.yaml" %
-            next(x for x in data if x['environment_name'])['environment_name'])
+    return ("./%s.yaml" % next(
+        x for x in data if x['environment_name'])['environment_name'])
 
 
 def setup_tf():
@@ -186,8 +186,8 @@ if __name__ == "__main__":
             e = euler_from_quat_msg(p.orientation)
             print(
                 "\tPosition (x,y,z): (%.2f, %.2f, %.2f) Orientation (r,p,y): "
-                "(%.2f, %.2f, %.2f)     " %
-                (p.position.x, p.position.y, p.position.z, e[0], e[1], e[2]),
+                "(%.2f, %.2f, %.2f)     " % (p.position.x, p.position.y,
+                                             p.position.z, e[0], e[1], e[2]),
                 end='\r')
             sleep(0.25)
             i, _, _ = select.select([sys.stdin], [], [], 0)
@@ -195,8 +195,8 @@ if __name__ == "__main__":
         print("%s" % ' ' * 100)
         print("Recording poses with the following settings:"
               "\n\tBag file:\t%s\n\tFrequency (Hz):\t%s\n\tROS topic:\t%s\n"
-              "Press ENTER when finished" %
-              (_DEFAULT_TRAJ_SAVE_LOCATION, traj_hz, traj_topic))
+              "Press ENTER when finished" % (_DEFAULT_TRAJ_SAVE_LOCATION,
+                                             traj_hz, traj_topic))
         b = rosbag.Bag(_DEFAULT_TRAJ_SAVE_LOCATION, 'w')
         r = rospy.Rate(traj_hz)
         i = None
@@ -215,8 +215,8 @@ if __name__ == "__main__":
 
     # Filter the trajectory using the provided filter function
     print("\n%sTRAJECTORY FILTERING:" % Fore.BLUE)
-    print("Loading trajectory data from '%s' in '%s' ..." %
-          (traj_topic, traj_bag))
+    print("Loading trajectory data from '%s' in '%s' ..." % (traj_topic,
+                                                             traj_bag))
     b = rosbag.Bag(traj_bag)
     poses = [m for _, m, _ in b.read_messages(topics=[traj_topic])]
     print("\t%sDone (loaded %d poses)\n" % (Fore.GREEN, len(poses)))
@@ -253,16 +253,16 @@ if __name__ == "__main__":
     print("\n%sENVIRONMENT METADATA:" % Fore.BLUE)
     output = [{
         'environment_name':
-            input("Short environment name (should have no spaces):\n")
+        input("Short environment name (should have no spaces):\n")
     }, {
         'map_path':
-            input("Path for map (leave empty & manually add later "
-                  "if doesn't exist yet):\n")
+        input("Path for map (leave empty & manually add later "
+              "if doesn't exist yet):\n")
     }]
     output.append({
         'description':
-            input("Detailed description (multiline input is "
-                  "accepted, press ENTER twice when done):\n")
+        input("Detailed description (multiline input is "
+              "accepted, press ENTER twice when done):\n")
     })
     extra = []
     while True:
@@ -273,8 +273,9 @@ if __name__ == "__main__":
             break
     output[-1]['description'] = '\n'.join([output[-1]['description']] + extra)
     output.append({'start_pose': simple_pose(poses_filtered[0])})
-    output.append(
-        {'trajectory_poses': ["%s" % simple_pose(p) for p in poses_filtered]})
+    output.append({
+        'trajectory_poses': ["%s" % simple_pose(p) for p in poses_filtered]
+    })
 
     # Write the gathered data to file in the appropriate YAML format
     print("\n%sCREATING ENVIRONMENT FILE:" % Fore.BLUE)
