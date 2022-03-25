@@ -1,12 +1,9 @@
-import base64
 import numpy as np
-import pprint
 import ros_numpy
 import rospy
-from scipy.spatial.transform import Rotation as Rot
+import transforms3d as t3
 
-from geometry_msgs.msg import Twist, Vector3
-# from benchbot_msgs import isaac_segment_img
+from geometry_msgs.msg import Twist
 
 _DEFAULT_SPEED_FACTOR = 1
 
@@ -17,131 +14,87 @@ _MOVE_TOL_YAW = np.deg2rad(1)
 
 _MOVE_ANGLE_K = 3
 
-_MOVE_POSE_K_RHO = 1.5
-_MOVE_POSE_K_ALPHA = 7.5
-_MOVE_POSE_K_BETA = -3
+_MOVE_POSE_K_RHO = 0.75
+_MOVE_POSE_K_ALPHA = 4
+_MOVE_POSE_K_BETA = -1.5
+
+_MOVE_LINEAR_LIMITS = [-0.2, 0.5]
+_MOVE_ANGULAR_LIMIT = 0.3
 
 
-def __ang_to_b(matrix_a, matrix_b):
-    # Computes the angle to matrix b, from the point specified in matrix a
-    return np.arctan2(matrix_b[1, 3] - matrix_a[1, 3],
-                      matrix_b[0, 3] - matrix_a[0, 3])
+def __quat_from_SE3(pose):
+    return t3.quaternions.mat2quat(pose[0:3, 0:3])[[1, 2, 3, 0]]
 
 
-def __ang_to_b_wrt_a(matrix_a, matrix_b):
-    # Computes the 2D angle to the location of homogenous transformation matrix
-    # b, wrt a
-    diff = __tr_b_wrt_a(matrix_a, matrix_b)
-    return np.arctan2(diff[1, 3], diff[0, 3])
+def __rpy_from_SE3(pose):
+    return t3.euler.mat2euler(pose[0:3, 0:3])
 
 
-def __dist_from_a_to_b(matrix_a, matrix_b):
-    # Computes 2D distance from homogenous transformation matrix a to b
-    return np.linalg.norm(__tr_b_wrt_a(matrix_a, matrix_b)[0:2, 3])
+def __SE3_from_translation(x=0, y=0, z=0):
+    p = np.eye(4)
+    p[0:3, 3] = np.array([x, y, z])
+    return p
+
+
+def __SE3_from_yaw(yaw):
+    x = np.eye(4)
+    x[0:3, 0:3] = t3.euler.euler2mat(0, 0, yaw)
+    return x
+
+
+def __SE3_to_SE2(pose):
+    y = t3.euler.mat2euler(pose[0:3, 0:3])[2]
+    return np.array([[np.cos(y), -np.sin(y), pose[0, 3]],
+                     [np.sin(y), np.cos(y), pose[1, 3]], [0, 0, 1]])
+
+
+def __tf_msg_to_SE3(tf_msg):
+    t = tf_msg.transform.translation
+    r = tf_msg.transform.rotation
+    return t3.affines.compose([t.x, t.y, t.z],
+                              t3.quaternions.quat2mat([r.w, r.x, r.y, r.z]),
+                              [1] * 3)
+
+
+def __xyzwXYZ_to_SE3(x, y, z, w, X, Y, Z):
+    return t3.affines.compose([X, Y, Z], t3.quaternions.quat2mat([w, x, y, z]),
+                              [1] * 3)
+
+
+def __yaw_from_SE2(pose):
+    return np.arctan2(pose[1, 0], pose[0, 0])
 
 
 def __pi_wrap(angle):
     return np.mod(angle + np.pi, 2 * np.pi) - np.pi
 
 
-def __pose_vector_to_tf_matrix(pv):
-    # Expected format is [x,y,z,w,X,Y,Z]
-    return np.vstack((np.hstack((Rot.from_quat(pv[0:4]).as_dcm(),
-                                 np.array(pv[4:]).reshape(3,
-                                                          1))), [0, 0, 0, 1]))
-
-
 def __safe_dict_get(d, key, default):
     return d[key] if type(d) is dict and key in d else default
-
-
-def __tf_ros_stamped_to_tf_matrix(tfs):
-    # ROS... how do you still not have a method for this in 2020...
-    return __pose_vector_to_tf_matrix([
-        tfs.transform.rotation.x, tfs.transform.rotation.y,
-        tfs.transform.rotation.z, tfs.transform.rotation.w,
-        tfs.transform.translation.x, tfs.transform.translation.y,
-        tfs.transform.translation.z
-    ])
-
-
-def __tr_b_wrt_a(matrix_a, matrix_b):
-    # Computes matrix_b - matrix_a (transform b wrt to transform a)
-    return np.matmul(np.linalg.inv(matrix_a), matrix_b)
-
-
-def __transrpy_to_tf_matrix(trans, rpy):
-    # Takes a translation vector & roll pitch yaw vector
-    return __pose_vector_to_tf_matrix(
-        np.hstack((Rot.from_euler('XYZ', rpy).as_quat(), trans)))
-
-
-def __yaw(matrix):
-    # Extracts the yaw value from a matrix
-    return Rot.from_dcm(matrix[0:3, 0:3]).as_euler('XYZ')[2]
-
-
-def __yaw_b_wrt_a(matrix_a, matrix_b):
-    # Computes the yaw diff of homogenous transformation matrix b w.r.t. a
-    return Rot.from_dcm(__tr_b_wrt_a(matrix_a,
-                                     matrix_b)[0:3, 0:3]).as_euler('XYZ')[2]
-
-
-def _debug_move(data, publisher, controller):
-    # Accepts:
-    # - rot_yaw: forms a tf matrix using yaw alone
-    # - rot_xyzw: forms a tf matrix using xyzq quat
-    # - trans_xyz: forms a tf matrix using xyz translation
-    # Priority:
-    # - Uses 'rot_yaw' if both rotation options are provided
-    # Default:
-    # - Uses 0 rotation & translation if values are missing
-    def print_pose(pose):
-        rpy = Rot.from_dcm(pose[0:3, 0:3]).as_euler('XYZ', degrees=True)
-        return ("rpy: %f, %f, %f  xyz: %f, %f, %f" %
-                tuple(np.hstack((rpy, pose[0:3, 3].transpose()))))
-
-    pose_a = _current_pose(controller)
-    print("STARTING @ POSE: %s" % print_pose(pose_a))
-    relative_pose = (__transrpy_to_tf_matrix(
-        __safe_dict_get(data, 'trans_xyz', [0, 0, 0]),
-        [0, 0, np.deg2rad(__safe_dict_get(data, 'rot_yaw', 0))])
-                     if 'rot_yaw' in data else __pose_vector_to_tf_matrix(
-                         __safe_dict_get(data, 'rot_xyzw', [0, 0, 0, 1]) +
-                         __safe_dict_get(data, 'trans_xyz', [0, 0, 0])))
-    print("GOAL POSE (RELATIVE): %s" % print_pose(relative_pose))
-    print("GOAL POSE (ABSOLUTE): %s" %
-          print_pose(np.matmul(pose_a, relative_pose)))
-    _move_to_pose(np.matmul(pose_a, relative_pose), publisher, controller)
-    pose_b = _current_pose(controller)
-    print("FINAL POSE (RELATIVE): %s" %
-          print_pose(__tr_b_wrt_a(pose_a, pose_b)))
-    print("FINAL POSE (ABSOLUTE): %s" % print_pose(pose_b))
 
 
 def _define_initial_pose(controller):
     # Check if we need to define initial pose (clean state and not already initialised)
     if not controller.instance.is_dirty(
-    ) and 'initial_pose_tf_mat' not in controller.state.keys():
-        controller.state[
-            'initial_pose_tf_mat'] = __tf_ros_stamped_to_tf_matrix(
-                controller.tf_buffer.lookup_transform(
-                    controller.config['robot']['global_frame'],
-                    controller.config['robot']['robot_frame'], rospy.Time()))
+    ) and 'initial_pose' not in controller.state.keys():
+        controller.state['initial_pose'] = __tf_msg_to_SE3(
+            controller.tf_buffer.lookup_transform(
+                controller.config['robot']['global_frame'],
+                controller.config['robot']['robot_frame'], rospy.Time()))
 
 
 def _get_noisy_pose(controller, child_frame):
     # Assumes initial pose of the robot has already been set
     # Get the initial pose of the robot within the world
-    world_t_init_pose = controller.state['initial_pose_tf_mat']
+    world_t_init_pose = controller.state['initial_pose']
 
     # Get the pose of child_frame w.r.t odom
     # TODO check if we should change odom from fixed name to definable
-    odom_t_child = __tf_ros_stamped_to_tf_matrix(
+    odom_t_child = __tf_msg_to_SE3(
         controller.tf_buffer.lookup_transform('odom', child_frame,
                                               rospy.Time()))
     # Noisy child should be init pose + odom_t_child
-    return np.matmul(world_t_init_pose, odom_t_child)
+    return world_t_init_pose * odom_t_child
 
 
 def _current_pose(controller):
@@ -152,7 +105,7 @@ def _current_pose(controller):
     if 'ground_truth' in controller.config['task']['name']:
         # TF tree by default provides poses such that robot pose is GT
         # Just return the transform in the tree
-        return __tf_ros_stamped_to_tf_matrix(
+        return __tf_msg_to_SE3(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'],
                 controller.config['robot']['robot_frame'], rospy.Time()))
@@ -169,19 +122,26 @@ def _move_speed_factor(controller):
 
 def _move_to_angle(goal, publisher, controller):
     # Servo until orientation matches that of the requested goal
+    g = __SE3_to_SE2(goal)
+
+    gamma = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while not controller.instance.is_collided():
+    while not controller.instance.is_collided() and (
+            gamma is None or np.abs(gamma) > _MOVE_TOL_YAW):
         # Get latest orientation error
-        orientation_error = __yaw_b_wrt_a(_current_pose(controller), goal)
+        current = __SE3_to_SE2(_current_pose(controller))
+        gamma = __yaw_from_SE2(np.matmul(np.linalg.inv(current), g))
 
-        # Bail if exit conditions are met
-        if np.abs(orientation_error) < _MOVE_TOL_YAW:
-            break
-
-        # Construct & send velocity msg
+        # Construct angular msg, with velocities clamped
         vel_msg.angular.z = (_move_speed_factor(controller) * _MOVE_ANGLE_K *
-                             orientation_error)
+                             gamma)
+        vel_msg.angular.z = (
+            _MOVE_ANGULAR_LIMIT if vel_msg.angular.z > _MOVE_ANGULAR_LIMIT else
+            -_MOVE_ANGULAR_LIMIT
+            if vel_msg.angular.z < -_MOVE_ANGULAR_LIMIT else vel_msg.angular.z)
+
+        # Send our velocity msg
         publisher.publish(vel_msg)
         hz_rate.sleep()
     publisher.publish(Twist())
@@ -190,42 +150,53 @@ def _move_to_angle(goal, publisher, controller):
 def _move_to_pose(goal, publisher, controller):
     # Servo to desired pose using control described in Robotics, Vision, &
     # Control 2nd Ed (Corke, p. 108)
-    # NOTE we also had to handle adjusting alpha correctly for reversing
-    # rho = distance from current to goal
-    # alpha = angle of goal vector in vehicle frame
-    # beta = angle between current yaw & desired yaw
+    g = __SE3_to_SE2(goal)
+
+    rho = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while not controller.instance.is_collided():
+    while not controller.instance.is_collided() and (rho is None or
+                                                     rho > _MOVE_TOL_DIST):
         # Get latest position error
-        current = _current_pose(controller)
-        rho = __dist_from_a_to_b(current, goal)
-        alpha = __pi_wrap(__ang_to_b(current, goal) - __yaw(current))
-        beta = __pi_wrap(__yaw(goal) - __ang_to_b(current, goal))
+        current = __SE3_to_SE2(_current_pose(controller))
+        error = np.matmul(np.linalg.inv(current), g)
 
-        # Identify if the goal is behind us, & appropriately transform the
-        # angles to reflect that we will reverse to the goal
-        backwards = np.abs(__ang_to_b_wrt_a(current, goal)) > np.pi / 2
+        # Calculate values used in the controller
+        rho = np.linalg.norm(error[0:2, 2])
+        alpha = np.arctan2(error[1, 2], error[0, 2])
+        beta = __pi_wrap(-__yaw_from_SE2(current) - alpha + __yaw_from_SE2(g))
+
+        # Construct velocity message
+        backwards = (rho > _MOVE_TOL_DIST and
+                     np.abs(np.arctan2(error[1, 2], error[0, 2])) > np.pi / 2)
         if backwards:
-            alpha = __pi_wrap(alpha + np.pi)
-            beta = __pi_wrap(beta + np.pi)
+            vel_msg.linear.x = -1 * _MOVE_POSE_K_RHO * rho
+            vel_msg.angular.z = (
+                _MOVE_POSE_K_ALPHA * __pi_wrap(alpha + np.pi) +
+                _MOVE_POSE_K_BETA * __pi_wrap(beta + np.pi))
+        else:
+            vel_msg.linear.x = _MOVE_POSE_K_RHO * rho
+            vel_msg.angular.z = (_MOVE_POSE_K_ALPHA * alpha +
+                                 _MOVE_POSE_K_BETA * beta)
 
-        # If within distance tolerance, correct angle & quit (the controller
-        # aims to drive the robot in at the correct angle, if it is already
-        # "in" but the angle is wrong, it will get stuck!)
-        # print("rho: %f, alpha: %f, beta: %f, back: %d" %
-        #       (rho, alpha, beta, backwards))
-        if rho < _MOVE_TOL_DIST:
-            _move_to_angle(goal, publisher, controller)
-            break
+        # Apply per-robot speed factors, and speed limits
+        vel_msg.linear.x = _move_speed_factor(controller) * vel_msg.linear.x
+        vel_msg.angular.z = _move_speed_factor(controller) * vel_msg.angular.z
 
-        # Construct & send velocity msg
-        vel_msg.linear.x = (_move_speed_factor(controller) *
-                            (-1 if backwards else 1) * _MOVE_POSE_K_RHO * rho)
-        vel_msg.angular.z = _move_speed_factor(controller) * (
-            _MOVE_POSE_K_ALPHA * alpha + _MOVE_POSE_K_BETA * beta)
-        publisher.publish(vel_msg)
-        hz_rate.sleep()
+        vel_msg.linear.x = (
+            _MOVE_LINEAR_LIMITS[1] if vel_msg.linear.x > _MOVE_LINEAR_LIMITS[1]
+            else _MOVE_LINEAR_LIMITS[0]
+            if vel_msg.linear.x < _MOVE_LINEAR_LIMITS[0] else vel_msg.linear.x)
+        vel_msg.angular.z = (
+            _MOVE_ANGULAR_LIMIT if vel_msg.angular.z > _MOVE_ANGULAR_LIMIT else
+            -_MOVE_ANGULAR_LIMIT
+            if vel_msg.angular.z < -_MOVE_ANGULAR_LIMIT else vel_msg.angular.z)
+
+        # Publish velocity (don't move if we're already there!)
+        if (rho > _MOVE_TOL_DIST):
+            publisher.publish(vel_msg)
+            hz_rate.sleep()
+    _move_to_angle(goal, publisher, controller)
     publisher.publish(Twist())
 
 
@@ -236,27 +207,27 @@ def create_pose_list(data, controller):
     # Check what mode we are in for poses (ground_truth or noisy)
     gt_mode = controller.config['task']['localisation'] != 'noisy'
     tfs = {
-        p: __tf_ros_stamped_to_tf_matrix(
+        p: __tf_msg_to_SE3(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'], p, rospy.Time()))
         if gt_mode else _get_noisy_pose(controller, p)
         # If we are in noisy mode, poses become initial pose plus odom->target
-        for p in controller.config['robot']['poses'] if p != 'initial_pose'
+        for p in controller.config['robot']['poses']
+        if p != 'initial_pose'
     }
 
     # Add the initial pose if desired (not in tf tree)
     if 'initial_pose' in controller.config['robot']['poses']:
-        tfs['initial_pose'] = controller.state['initial_pose_tf_mat']
+        tfs['initial_pose'] = controller.state['initial_pose']
 
     # TODO REMOVE HACK FOR FIXING CAMERA NAME!!!
     return {
         'camera' if 'left_camera' in k else k: {
             'parent_frame': controller.config['robot']['global_frame'],
-            'translation_xyz': v[:-1, -1],
-            'rotation_rpy': Rot.from_dcm(v[:-1, :-1]).as_euler('XYZ'),
-            'rotation_xyzw': Rot.from_dcm(v[:-1, :-1]).as_quat()
-        }
-        for k, v in tfs.items()
+            'translation_xyz': v[0:3, 3],
+            'rotation_rpy': __rpy_from_SE3(v),
+            'rotation_xyzw': __quat_from_SE3(v)
+        } for k, v in tfs.items()
     }
 
 
@@ -292,14 +263,14 @@ def encode_segment_image(data, controller):
 def encode_laserscan(data, controller):
     return {
         'scans':
-        np.array([[
-            data.ranges[i],
-            __pi_wrap(data.angle_min + i * data.angle_increment)
-        ] for i in range(0, len(data.ranges))]),
+            np.array([[
+                data.ranges[i],
+                __pi_wrap(data.angle_min + i * data.angle_increment)
+            ] for i in range(0, len(data.ranges))]),
         'range_min':
-        data.range_min,
+            data.range_min,
         'range_max':
-        data.range_max
+            data.range_max
     }
 
 
@@ -308,20 +279,17 @@ def move_angle(data, publisher, controller):
     _move_to_pose(
         np.matmul(
             _current_pose(controller),
-            __transrpy_to_tf_matrix([0, 0, 0], [
-                0, 0,
-                __pi_wrap(np.deg2rad(__safe_dict_get(data, 'angle', 0)))
-            ])), publisher, controller)
+            __SE3_from_yaw(np.deg2rad(__safe_dict_get(data, 'angle', 0)))),
+        publisher, controller)
 
 
 def move_distance(data, publisher, controller):
     # Derive a corresponding goal pose & send the robot there
     _move_to_pose(
-        np.matmul(
-            _current_pose(controller),
-            __transrpy_to_tf_matrix(
-                [__safe_dict_get(data, 'distance', 0), 0, 0], [0, 0, 0])),
-        publisher, controller)
+        np.matmul(_current_pose(controller),
+                  __SE3_from_translation(__safe_dict_get(data, 'distance',
+                                                         0))), publisher,
+        controller)
 
 
 def move_next(data, publisher, controller):
@@ -333,12 +301,10 @@ def move_next(data, publisher, controller):
                 controller.state['selected_environment']]['trajectory_poses']
 
     # Servo to the goal pose
-    _move_to_pose(
-        __pose_vector_to_tf_matrix(
-            np.take(
-                np.array(controller.state['trajectory_poses'][
-                    controller.state['trajectory_pose_next']]),
-                [1, 2, 3, 0, 4, 5, 6])), publisher, controller)
+    t = controller.state['trajectory_poses'][
+        controller.state['trajectory_pose_next']]
+    _move_to_pose(__xyzwXYZ_to_SE3(*np.array(t)[[1, 2, 3, 0, 4, 5, 6]]),
+                  publisher, controller)
 
     # Register that we completed this goal
     controller.state['trajectory_pose_next'] += 1
