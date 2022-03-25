@@ -142,10 +142,10 @@ def _move_to_pose(goal, publisher, controller):
                             vel_msg.linear.x > _MOVE_POSE_LINEAR_LIMITS[1] else
                             _MOVE_POSE_LINEAR_LIMITS[0] if vel_msg.linear.x <
                             _MOVE_POSE_LINEAR_LIMITS[0] else vel_msg.linear.x)
-        vel_msg.angular.z = (
-            _MOVE_POSE_K_ALPHA
-            if vel_msg.angular.z > _MOVE_POSE_K_ALPHA else -_MOVE_POSE_K_ALPHA
-            if vel_msg.angular.z < -_MOVE_POSE_K_ALPHA else vel_msg.angular.z)
+        vel_msg.angular.z = (_MOVE_POSE_K_ALPHA
+                             if vel_msg.angular.z > _MOVE_POSE_ANGULAR_LIMIT
+                             else -_MOVE_POSE_K_ALPHA if vel_msg.angular.z <
+                             -_MOVE_POSE_ANGULAR_LIMIT else vel_msg.angular.z)
 
         # Publish velocity
         publisher.publish(vel_msg)
