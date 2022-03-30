@@ -75,7 +75,7 @@ def _to_simple_dict(data):
 
 class ControllerInstance(object):
 
-    def __init__(self, config_robot, config_env, ros_subs):
+    def __init__(self, config_robot, config_env, ros_subs, events=None):
         self.config_robot = config_robot
         self.config_env = config_env
 
@@ -84,6 +84,7 @@ class ControllerInstance(object):
         self._cmds = None
         self._processes = None
         self._log_files = None
+        self._events = events
 
     def _replace_variables(self, text):
         for k, v in VARIABLES.items():
@@ -486,7 +487,7 @@ class RobotController(object):
                 print("Starting the requested real robot ROS stack ... ",
                       end="")
                 sys.stdout.flush()
-                self.start()
+                self.start(events=evt)
                 print("Done")
 
         # Wait until we get an exit signal or crash, then shut down gracefully
@@ -533,7 +534,7 @@ class RobotController(object):
         # TODO proper checks...
         self.config_valid = True
 
-    def start(self):
+    def start(self, events=None):
         self.state = {
             k: v for k, v in self.state.items() if k in DEFAULT_STATE
         }
@@ -543,7 +544,8 @@ class RobotController(object):
                 c['ros']
                 for c in self.connections.values()
                 if c['type'] == CONN_ROS_TO_API and c['ros'] != None
-            ])
+            ],
+            handler=events)
         self.instance.start()
 
     def stop(self):
