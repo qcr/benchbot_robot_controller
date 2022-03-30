@@ -471,9 +471,8 @@ class RobotController(object):
         robot_server = pywsgi.WSGIServer(
             re.split('http[s]?://', self.robot_address)[-1], robot_flask)
         evt = event.Event()
-        signal.signal(signal.SIGINT, evt.set)
-        signal.signal(signal.SIGQUIT, evt.set)
-        signal.signal(signal.SIGTERM, evt.set)
+        for s in [signal.SIGINT, signal.SIGQUIT, signal.SIGTERM]:
+            signal.signal(s, lambda n, frame: evt.set())
 
         # Run the server & start the real robot controller
         robot_server.start()
@@ -546,7 +545,7 @@ class RobotController(object):
                 for c in self.connections.values()
                 if c['type'] == CONN_ROS_TO_API and c['ros'] != None
             ],
-            handler=events)
+            events=events)
         self.instance.start()
 
     def stop(self):
