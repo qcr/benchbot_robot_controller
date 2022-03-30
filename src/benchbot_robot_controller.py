@@ -162,7 +162,8 @@ class ControllerInstance(object):
         # Wait until we move into a running state
         start_time = time.time()
         while not self.is_running():
-            time.sleep(0.25)
+            if self._events and self._events.wait(0.25):
+                return False
             if not self.health_check(check_running=False):
                 return False
             elif (time.time() - start_time > TIMEOUT_STARTUP and
