@@ -14,12 +14,12 @@ _MOVE_TOL_YAW = np.deg2rad(1)
 
 _MOVE_ANGLE_K = 3
 
-_MOVE_POSE_K_RHO = 0.75
+_MOVE_POSE_K_RHO = 1
 _MOVE_POSE_K_ALPHA = 4
 _MOVE_POSE_K_BETA = -1.5
 
-_MOVE_LINEAR_LIMITS = [-0.2, 0.5]
-_MOVE_ANGULAR_LIMIT = 0.3
+_MOVE_LINEAR_LIMITS = [-0.4, 0.8]
+_MOVE_ANGULAR_LIMIT = 0.5
 
 
 def __quat_from_SE3(pose):
@@ -127,8 +127,9 @@ def _move_to_angle(goal, publisher, controller):
     gamma = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while not controller.instance.is_collided() and (
-            gamma is None or np.abs(gamma) > _MOVE_TOL_YAW):
+    while (not controller.evt.is_set() and
+           not controller.instance.is_collided() and
+           (gamma is None or np.abs(gamma) > _MOVE_TOL_YAW)):
         # Get latest orientation error
         current = __SE3_to_SE2(_current_pose(controller))
         gamma = __yaw_from_SE2(np.matmul(np.linalg.inv(current), g))
@@ -155,8 +156,9 @@ def _move_to_pose(goal, publisher, controller):
     rho = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while not controller.instance.is_collided() and (rho is None or
-                                                     rho > _MOVE_TOL_DIST):
+    while (not controller.evt.is_set() and
+           not controller.instance.is_collided() and
+           (rho is None or rho > _MOVE_TOL_DIST)):
         # Get latest position error
         current = __SE3_to_SE2(_current_pose(controller))
         error = np.matmul(np.linalg.inv(current), g)

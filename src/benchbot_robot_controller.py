@@ -75,7 +75,7 @@ def _to_simple_dict(data):
 
 class ControllerInstance(object):
 
-    def __init__(self, config_robot, config_env, ros_subs):
+    def __init__(self, config_robot, config_env, ros_subs, events=None):
         self.config_robot = config_robot
         self.config_env = config_env
 
@@ -84,6 +84,7 @@ class ControllerInstance(object):
         self._cmds = None
         self._processes = None
         self._log_files = None
+        self._events = events
 
     def _replace_variables(self, text):
         for k, v in VARIABLES.items():
@@ -161,7 +162,8 @@ class ControllerInstance(object):
         # Wait until we move into a running state
         start_time = time.time()
         while not self.is_running():
-            time.sleep(0.25)
+            if self._events and self._events.wait(0.25):
+                return False
             if not self.health_check(check_running=False):
                 return False
             elif (time.time() - start_time > TIMEOUT_STARTUP and
@@ -189,9 +191,10 @@ class ControllerInstance(object):
         ]
 
     def stop(self):
-        if not self.is_running():
-            print("Controller Instance is not running. Skipping stop.")
-            return False
+        # We could be in the process of starting, so this check is inappropriate
+        # if not self.is_running():
+        #     print("Controller Instance is not running. Skipping stop.")
+        #     return False
 
         # Stop all of the open processes & logging
         for p in self._processes:
@@ -225,7 +228,6 @@ class RobotController(object):
         self.robot_address = 'http://0.0.0.0:' + str(port)
 
         self._auto_start = auto_start
-
         self.config = None
         self.config_valid = False
 
@@ -235,6 +237,10 @@ class RobotController(object):
         self._tf_listener = tf2_ros.TransformListener(self.tf_buffer)
 
         self.instance = None
+
+        self.evt = event.Event()
+        for s in [signal.SIGINT, signal.SIGQUIT, signal.SIGTERM]:
+            signal.signal(s, lambda n, frame: self.evt.set())
 
         self.wipe()
 
@@ -468,10 +474,6 @@ class RobotController(object):
         # Configure our server
         robot_server = pywsgi.WSGIServer(
             re.split('http[s]?://', self.robot_address)[-1], robot_flask)
-        evt = event.Event()
-        signal.signal(signal.SIGINT, evt.set)
-        signal.signal(signal.SIGQUIT, evt.set)
-        signal.signal(signal.SIGTERM, evt.set)
 
         # Run the server & start the real robot controller
         robot_server.start()
@@ -479,7 +481,7 @@ class RobotController(object):
               self.robot_address)
         print("Waiting to receive valid config data...")
         while not self.config_valid:
-            if evt.wait(0.1):
+            if self.evt.wait(0.1):
                 break
 
             if self._auto_start and self.config_valid:
@@ -491,7 +493,7 @@ class RobotController(object):
 
         # Wait until we get an exit signal or crash, then shut down gracefully
         while self.instance.health_check():
-            if evt.wait(0.1):
+            if self.evt.wait(0.1):
                 break
         print("\nShutting down the real robot ROS stack & exiting ...")
         robot_server.stop()
@@ -543,7 +545,8 @@ class RobotController(object):
                 c['ros']
                 for c in self.connections.values()
                 if c['type'] == CONN_ROS_TO_API and c['ros'] != None
-            ])
+            ],
+            events=self.evt)
         self.instance.start()
 
     def stop(self):
