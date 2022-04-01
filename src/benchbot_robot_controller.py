@@ -191,9 +191,10 @@ class ControllerInstance(object):
         ]
 
     def stop(self):
-        if not self.is_running():
-            print("Controller Instance is not running. Skipping stop.")
-            return False
+        # We could be in the process of starting, so this check is inappropriate
+        # if not self.is_running():
+        #     print("Controller Instance is not running. Skipping stop.")
+        #     return False
 
         # Stop all of the open processes & logging
         for p in self._processes:
