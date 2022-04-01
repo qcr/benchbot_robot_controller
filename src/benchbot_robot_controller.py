@@ -228,7 +228,6 @@ class RobotController(object):
         self.robot_address = 'http://0.0.0.0:' + str(port)
 
         self._auto_start = auto_start
-
         self.config = None
         self.config_valid = False
 
@@ -238,6 +237,10 @@ class RobotController(object):
         self._tf_listener = tf2_ros.TransformListener(self.tf_buffer)
 
         self.instance = None
+
+        self.evt = event.Event()
+        for s in [signal.SIGINT, signal.SIGQUIT, signal.SIGTERM]:
+            signal.signal(s, lambda n, frame: self.evt.set())
 
         self.wipe()
 
@@ -471,9 +474,6 @@ class RobotController(object):
         # Configure our server
         robot_server = pywsgi.WSGIServer(
             re.split('http[s]?://', self.robot_address)[-1], robot_flask)
-        evt = event.Event()
-        for s in [signal.SIGINT, signal.SIGQUIT, signal.SIGTERM]:
-            signal.signal(s, lambda n, frame: evt.set())
 
         # Run the server & start the real robot controller
         robot_server.start()
@@ -481,19 +481,19 @@ class RobotController(object):
               self.robot_address)
         print("Waiting to receive valid config data...")
         while not self.config_valid:
-            if evt.wait(0.1):
+            if self.evt.wait(0.1):
                 break
 
             if self._auto_start and self.config_valid:
                 print("Starting the requested real robot ROS stack ... ",
                       end="")
                 sys.stdout.flush()
-                self.start(events=evt)
+                self.start()
                 print("Done")
 
         # Wait until we get an exit signal or crash, then shut down gracefully
         while self.instance.health_check():
-            if evt.wait(0.1):
+            if self.evt.wait(0.1):
                 break
         print("\nShutting down the real robot ROS stack & exiting ...")
         robot_server.stop()
@@ -535,7 +535,7 @@ class RobotController(object):
         # TODO proper checks...
         self.config_valid = True
 
-    def start(self, events=None):
+    def start(self):
         self.state = {
             k: v for k, v in self.state.items() if k in DEFAULT_STATE
         }
@@ -546,7 +546,7 @@ class RobotController(object):
                 for c in self.connections.values()
                 if c['type'] == CONN_ROS_TO_API and c['ros'] != None
             ],
-            events=events)
+            events=self.evt)
         self.instance.start()
 
     def stop(self):
