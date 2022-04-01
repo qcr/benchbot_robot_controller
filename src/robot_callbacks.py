@@ -127,8 +127,9 @@ def _move_to_angle(goal, publisher, controller):
     gamma = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while not controller.instance.is_collided() and (
-            gamma is None or np.abs(gamma) > _MOVE_TOL_YAW):
+    while (not controller.evt.is_set() and
+           not controller.instance.is_collided() and
+           (gamma is None or np.abs(gamma) > _MOVE_TOL_YAW)):
         # Get latest orientation error
         current = __SE3_to_SE2(_current_pose(controller))
         gamma = __yaw_from_SE2(np.matmul(np.linalg.inv(current), g))
@@ -155,8 +156,9 @@ def _move_to_pose(goal, publisher, controller):
     rho = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while not controller.instance.is_collided() and (rho is None or
-                                                     rho > _MOVE_TOL_DIST):
+    while (not controller.evt.is_set() and
+           not controller.instance.is_collided() and
+           (rho is None or rho > _MOVE_TOL_DIST)):
         # Get latest position error
         current = __SE3_to_SE2(_current_pose(controller))
         error = np.matmul(np.linalg.inv(current), g)
