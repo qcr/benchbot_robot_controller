@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
+
 import numpy as np
 import os
 import rospy
@@ -80,13 +82,24 @@ if __name__ == '__main__':
         c = rc.__SE3_to_SE2(rc._current_pose(d))
 
         # Get goal from terminal
-        goal_xyt = (0, 0, 0)
+        goal_xyt = None
+        while goal_xyt is None:
+            print("Relative goal (format: x,y,th): ", end='')
+            g = raw_input().split(',')
+            if len(g) == 3:
+                goal_xyt = []
+                for x in g:
+                    try:
+                        goal_xyt.append(float(x))
+                    except:
+                        goal_xyt = None
+                        break
         goal_rel = rc.__SE3_to_SE2(
             np.matmul(rc.__SE3_from_translation(goal_xyt[0], goal_xyt[1]),
                       rc.__SE3_from_yaw(goal_xyt[2])))
         goal_abs = np.matmul(c, goal_rel)
 
-        # Send the goal using robot callback
+        # Print some information about the goal
         ct = rc.__SE2_to_xyt(c)
         grt = rc.__SE2_to_xyt(goal_rel)
         gat = rc.__SE2_to_xyt(goal_abs)
@@ -95,4 +108,5 @@ if __name__ == '__main__':
             (ct[0], ct[1], ct[2], gat[0], gat[1], gat[2], grt[0], grt[1],
              grt[2]))
 
+        # Try and move to the goal
         rc._move_to_pose(__SE2_to_SE3(goal_abs), p, d)
