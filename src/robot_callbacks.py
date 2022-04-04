@@ -30,11 +30,14 @@ def __rpy_from_SE3(pose):
     return t3.euler.mat2euler(pose[0:3, 0:3])
 
 
+def __SE2_to_xyt(pose):
+    return np.array([pose[0,2], pose[1,2], __yaw_from_SE2(pose)])
+
+
 def __SE3_from_translation(x=0, y=0, z=0):
     p = np.eye(4)
     p[0:3, 3] = np.array([x, y, z])
     return p
-
 
 def __SE3_from_yaw(yaw):
     x = np.eye(4)
@@ -75,8 +78,8 @@ def __safe_dict_get(d, key, default):
 
 def _define_initial_pose(controller):
     # Check if we need to define initial pose (clean state and not already initialised)
-    if not controller.instance.is_dirty(
-    ) and 'initial_pose' not in controller.state.keys():
+    if (not controller.instance.is_dirty() and
+            'initial_pose' not in controller.state.keys()):
         controller.state['initial_pose'] = __tf_msg_to_SE3(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'],
