@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+# Pulls an existing config into currently running controller
+curl -s benchbot_supervisor:10000/config/ | \
+  curl -d @- -H 'Content-Type: application/json' benchbot_robot:10000/configure
