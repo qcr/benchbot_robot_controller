@@ -198,7 +198,10 @@ class ControllerInstance(object):
 
         # Stop all of the open processes & logging
         for p in self._processes:
-            os.killpg(os.getpgid(p.pid), signal.SIGINT)
+            try:
+                os.killpg(os.getpgid(p.pid), signal.SIGINT)
+            except:
+                pass
         for p in self._processes:
             p.wait()
         self._processes = None
