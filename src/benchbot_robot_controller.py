@@ -131,7 +131,7 @@ class ControllerInstance(object):
                                            s.data_class,
                                            timeout=TIMEOUT_ROS_PING)
             except Exception as e:
-                rospy.loginfo("FAILURE: %s" % e)
+                # rospy.loginfo("FAILURE: %s" % e)
                 return False
             return True
 
@@ -200,7 +200,8 @@ class ControllerInstance(object):
         for p in self._processes:
             try:
                 os.killpg(os.getpgid(p.pid), signal.SIGINT)
-            except:
+            except Exception as e:
+                print(e)
                 pass
         for p in self._processes:
             p.wait()
