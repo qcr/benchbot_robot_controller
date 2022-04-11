@@ -479,26 +479,32 @@ class RobotController(object):
         robot_server = pywsgi.WSGIServer(
             re.split('http[s]?://', self.robot_address)[-1], robot_flask)
 
-        # Run the server & start the real robot controller
+        # Make the robot controller interface available to receive commands
         robot_server.start()
         print("\nRobot controller is now available @ '%s' ..." %
               self.robot_address)
-        print("Waiting to receive valid config data...")
-        while not self.config_valid:
-            if self.evt.wait(0.1):
-                break
 
-            if self._auto_start and self.config_valid:
-                print("Starting the requested real robot ROS stack ... ",
-                      end="")
-                sys.stdout.flush()
-                self.start()
-                print("Done")
+        # Run until we receive an exit signal
+        while not self.evt.wait(0.1):
+            pass
 
-        # Wait until we get an exit signal or crash, then shut down gracefully
-        while self.instance.health_check():
-            if self.evt.wait(0.1):
-                break
+        # print("Waiting to receive valid config data...")
+        # while not self.config_valid:
+        #     if self.evt.wait(0.1):
+        #         break
+
+        #     if self._auto_start and self.config_valid:
+        #         print("Starting the requested real robot ROS stack ... ",
+        #               end="")
+        #         sys.stdout.flush()
+        #         self.start()
+        #         print("Done")
+
+        # # Wait until we get an exit signal or crash, then shut down gracefully
+        # while self.instance.health_check():
+        #     if self.evt.wait(0.1):
+        #         break
+
         print("\nShutting down the real robot ROS stack & exiting ...")
         robot_server.stop()
         self.stop()
