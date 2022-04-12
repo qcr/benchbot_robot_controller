@@ -36,8 +36,9 @@ CONN_ROS_TO_API = 'ros_to_api'
 CONN_ROSCACHE_TO_API = 'roscache_to_api'
 CONNS = [CONN_API_TO_ROS, CONN_ROS_TO_API, CONN_ROSCACHE_TO_API]
 
+TIMEOUT_PREPARE = 120
 TIMEOUT_ROS_PING = 5
-TIMEOUT_STARTUP = 9000000000000
+TIMEOUT_RUN = 90
 
 VARIABLES = {
     'ENVS_PATH':
@@ -86,10 +87,31 @@ class ControllerInstance(object):
         self._log_files = None
         self._events = events
 
+        self.prepared = False
+
     def _replace_variables(self, text):
         for k, v in VARIABLES.items():
             text = text.replace("$%s" % k, str(eval(v)))
         return text
+
+    def destroy(self):
+        if not self.prepared:
+            return True
+        self.prepared = False
+
+        # Stop all of the open processes & logging
+        for p in self._processes:
+            try:
+                os.killpg(os.getpgid(p.pid), signal.SIGINT)
+            except Exception as e:
+                print(e)
+                pass
+        for p in self._processes:
+            p.wait()
+        self._processes = None
+        self.stop_logging()
+
+        return True
 
     def health_check(self, check_running=True):
         # Checks the health of the currently running instance, printing errors
@@ -134,6 +156,52 @@ class ControllerInstance(object):
                 # rospy.loginfo("FAILURE: %s" % e)
                 return False
             return True
+
+    def prepare(self):
+        if self.prepared:
+            self.destroy()
+
+        # Get a set of commands by replacing variables with the config values
+        self._cmds = [
+            self._replace_variables(c)
+            for c in self.config_robot['persistent_cmds']
+        ]
+
+        # Start the set of commands, holding onto the process so we can manage
+        # the lifecycle
+        self.start_logging()
+        self._processes = [
+            subprocess.Popen(c,
+                             shell=True,
+                             executable='/bin/bash',
+                             stdout=l,
+                             stderr=l,
+                             preexec_fn=os.setsid)
+            for c, l in zip(self._cmds, self._log_files)
+        ]
+
+        # Determine if we're successfully prepared
+        cmd = self._replace_variables(self.config['persistent_status'])
+        start = time.time()
+        while (subprocess.Popen(cmd, shell=True,
+                                executable='/bin/bash').wait() != 0):
+            if self._events and self._events.wait(0.25):
+                return False
+            elif (time.time() - start > TIMEOUT_PREPARE):
+                print("\nFAILED TO PREPARE INSTANCE AFTER %ss. "
+                      "STATUS CHECK COMMANDS WAS:\n\t%s\n\n"
+                      "DUMPING LOGS FOR ALL COMMANDS... " %
+                      (TIMEOUT_PREPARE, cmd))
+                for i, _ in enumerate(self._cmds):
+                    print("COMMAND:\n\t%s\nOUTPUT:" % self._cmds[i])
+                    with open(
+                            os.path.join(self.config_robot['logs_dir'], str(i),
+                                         'r')) as f:
+                        print(f.read())
+                return False
+            else:
+                time.sleep(0.25)
+        return True
 
     def start(self):
         if self.is_running():
