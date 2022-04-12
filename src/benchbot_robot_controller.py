@@ -181,7 +181,7 @@ class ControllerInstance(object):
         ]
 
         # Determine if we're successfully prepared
-        cmd = self._replace_variables(self.config['persistent_status'])
+        cmd = self._replace_variables(self.config_robot['persistent_status'])
         start = time.time()
         while (subprocess.Popen(cmd, shell=True,
                                 executable='/bin/bash').wait() != 0):
