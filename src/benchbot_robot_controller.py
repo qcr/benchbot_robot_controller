@@ -605,26 +605,10 @@ class RobotController(object):
         while not self.evt.wait(0.1):
             pass
 
-        # print("Waiting to receive valid config data...")
-        # while not self.config_valid:
-        #     if self.evt.wait(0.1):
-        #         break
-
-        #     if self._auto_start and self.config_valid:
-        #         print("Starting the requested real robot ROS stack ... ",
-        #               end="")
-        #         sys.stdout.flush()
-        #         self.start()
-        #         print("Done")
-
-        # # Wait until we get an exit signal or crash, then shut down gracefully
-        # while self.instance.health_check():
-        #     if self.evt.wait(0.1):
-        #         break
-
+        # Exit cleanly
         print("\nShutting down the real robot ROS stack & exiting ...")
         robot_server.stop()
-        self.stop()
+        self.destroy()
         print("Stopped")
 
     def set_config(self, config):
