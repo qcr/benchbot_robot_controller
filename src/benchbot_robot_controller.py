@@ -350,10 +350,29 @@ class RobotController(object):
                       connection_data['connection'])
 
     def destroy(self):
-        pass
+        if self.instance is not None:
+            self.instance.destroy()
+        self.wipe()
+        self.prepared = False
+        self.running = False
+        return True
 
     def prepare(self):
+        # Start a new instance from a clean state
+        self.wipe()
+        self.instance = ControllerInstance(
+            self.config['robot'],
+            self.config['environments'][self.state['selected_environment']], [
+                c['ros']
+                for c in self.connections.values()
+                if c['type'] == CONN_ROS_TO_API and c['ros'] != None
+            ],
+            events=self.evt)
 
+        # Start the persistent preparation commands, & return the status
+        self.running = False
+        self.prepared = self.instance.prepare()
+        return self.prepared
 
     def run(self):
         # Setup all of the robot management functions
@@ -646,18 +665,8 @@ class RobotController(object):
         self.config_valid = True
 
     def start(self):
-        self.state = {
-            k: v for k, v in self.state.items() if k in DEFAULT_STATE
-        }
-        self.instance = ControllerInstance(
-            self.config['robot'],
-            self.config['environments'][self.state['selected_environment']], [
-                c['ros']
-                for c in self.connections.values()
-                if c['type'] == CONN_ROS_TO_API and c['ros'] != None
-            ],
-            events=self.evt)
-        return self.instance.start()
+        # TODO execute start commands
+        pass
 
     def stop(self):
         if self.instance is not None:
