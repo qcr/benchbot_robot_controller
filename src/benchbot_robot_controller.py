@@ -199,7 +199,7 @@ class ControllerInstance(object):
                                          'r')) as f:
                         print(f.read())
                 return False
-            else:
+            elif not self._events:
                 time.sleep(0.25)
         return True
 
@@ -222,6 +222,8 @@ class ControllerInstance(object):
             elif (time.time() - start > TIMEOUT_RUN):
                 print("\nFAILED TO START INSTANCE AFTER %ss" % TIMEOUT_RUN)
                 return False
+            elif not self._events:
+                time.sleep(0.25)
 
         if status > 0:
             print("\nCOMMAND TO START INSTANCE HAD NON-ZERO RETURN CODE (%d)" %
@@ -238,22 +240,21 @@ class ControllerInstance(object):
         ]
 
     def stop(self):
-        # We could be in the process of starting, so this check is inappropriate
-        # if not self.is_running():
-        #     print("Controller Instance is not running. Skipping stop.")
-        #     return False
+        if not self.is_running():
+            print("\nController isn't running, so nothing to stop.")
+            return True
 
-        # Stop all of the open processes & logging
-        for p in self._processes:
-            try:
-                os.killpg(os.getpgid(p.pid), signal.SIGINT)
-            except Exception as e:
-                print(e)
-                pass
-        for p in self._processes:
-            p.wait()
-        self._processes = None
-        self.stop_logging()
+        # Get the stop command
+        cmd = self._replace_variables(self.config_robot['stop_cmd'])
+
+        # Attempt to execute the command
+        p = subprocess.Popen(cmd, shell=True, executable='/bin/bash')
+        status = p.poll()
+        while status is None:
+            if self._events and self._events.wait(0.25):
+                return False
+            elif not self._events:
+                time.sleep(0.25)
 
         # Clear all temporary files
         for f in [
@@ -264,9 +265,12 @@ class ControllerInstance(object):
                              shell=True,
                              executable='/bin/bash').wait()
 
-        # Wait until controller instance is detected as not running
-        while self.is_running():
-            time.sleep(0.25)
+        # Return the result
+        if status > 0:
+            print("\nCOMMAND TO STOP INSTANCE HAD NON-ZERO RETURN CODE (%d)" %
+                  status)
+            return False
+        return True
 
     def stop_logging(self):
         for f in self._log_files:
