@@ -346,11 +346,6 @@ class RobotController(object):
                 print("UNIMPLEMENTED POST CONNECTION: %s" %
                       connection_data['connection'])
 
-    def restart(self):
-        # Restarts the robot by returning it to the starting point
-        self.stop()
-        self.start()
-
     def run(self):
         # Setup all of the robot management functions
         # TODO some of these should probably be POST methods...
