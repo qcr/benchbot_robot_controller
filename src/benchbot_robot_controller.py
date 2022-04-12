@@ -350,7 +350,7 @@ class RobotController(object):
                       connection_data['connection'])
 
     def destroy(self):
-        if self.instance is not None:
+        if self.prepared:
             self.instance.destroy()
         self.wipe()
         self.prepared = False
@@ -665,12 +665,16 @@ class RobotController(object):
         self.config_valid = True
 
     def start(self):
-        # TODO execute start commands
-        pass
+        if self.prepared:
+            self.running = self.instance.start()
+            return self.running
+        else:
+            return False
 
     def stop(self):
-        if self.instance is not None:
+        if self.prepared:
             self.instance.stop()
+        return True
 
     def wipe(self):
         self.state = copy.deepcopy(DEFAULT_STATE)
