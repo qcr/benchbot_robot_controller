@@ -475,6 +475,24 @@ class RobotController(object):
             except Exception as e:
                 rospy.logerr(e)
 
+        @robot_flask.route('/start', methods=['GET'])
+        def __start():
+            try:
+                if not self.config_valid:
+                    rospy.logwarn(
+                        "Can't start controller without a valid config")
+                    success = False
+                else
+                    print("Starting the requested robot stack ... ", end="")
+                    sys.stdout.flush()
+                    self.start()
+                    print("Done")
+                    success = True
+            except Exception as e:
+                rospy.logerr(e)
+                success = False
+            return flask.jsonify({'start_success': success})
+
         # Configure our server
         robot_server = pywsgi.WSGIServer(
             re.split('http[s]?://', self.robot_address)[-1], robot_flask)
