@@ -235,6 +235,9 @@ class RobotController(object):
         self.config = None
         self.config_valid = False
 
+        self.prepared = False
+        self.running = False
+
         self.state = None
         self.connections = {}
         self.tf_buffer = tf2_ros.Buffer()
@@ -345,6 +348,12 @@ class RobotController(object):
             else:
                 print("UNIMPLEMENTED POST CONNECTION: %s" %
                       connection_data['connection'])
+
+    def destroy(self):
+        pass
+
+    def prepare(self):
+        pass
 
     def run(self):
         # Setup all of the robot management functions
@@ -524,9 +533,8 @@ class RobotController(object):
         print("Stopped")
 
     def set_config(self, config):
-        # Stop any running instances (we are bailing on any notion of dynamic
-        # reconfiguration...)
-        self.stop()
+        # Destroy any running instances
+        self.destroy()
 
         # Copy in the merged dicts
         self.config = {
@@ -570,7 +578,7 @@ class RobotController(object):
                 if c['type'] == CONN_ROS_TO_API and c['ros'] != None
             ],
             events=self.evt)
-        self.instance.start()
+        return self.instance.start()
 
     def stop(self):
         if self.instance is not None:
