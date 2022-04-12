@@ -353,7 +353,7 @@ class RobotController(object):
         pass
 
     def prepare(self):
-        pass
+
 
     def run(self):
         # Setup all of the robot management functions
@@ -366,33 +366,56 @@ class RobotController(object):
 
         @robot_flask.route('/config/', methods=['GET'])
         def __config_full():
-            return flask.jsonify(self.config)
+            try:
+                if not self.config_valid:
+                    rospy.logerr(
+                        "Controller currently has no valid configuration.")
+                    flask.abort(404)
+                else:
+                    return flask.jsonify(self.config)
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/config/<config>', methods=['GET'])
         def __config(config):
-            if config in self.config:
-                return flask.jsonify(self.config[config])
-            else:
-                rospy.logerr("Requested non-existent config: %s" % config)
-                flask.abort(404)
+            try:
+                if not self.config_valid:
+                    rospy.logerr(
+                        "Controller currently has no valid configuration.")
+                    flask.abort(404)
+                elif config not in self.config:
+                    rospy.logerr("Requested non-existent config: %s" % config)
+                    flask.abort(404)
+                else:
+                    return flask.jsonify(self.config[config])
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/configure', methods=['POST'])
         def __configure():
             try:
                 self.set_config(flask.request.json)
-            except Exception as e:
+                return flask.jsonify(
+                    {'configuration_valid': self.config_valid})
+            except:
+                self.config_valid = False
                 print(traceback.format_exc())
-                raise (e)
-            return flask.jsonify({'configuration_valid': self.config_valid})
+                flask.abort(500)
 
         @robot_flask.route('/connections/<connection>',
                            methods=['GET', 'POST'])
         def __connection(connection):
             # Handle all connection calls (typically sent via the supervisor)
-            if connection not in self.config['robot']['connections']:
-                rospy.logerr("Requested undefined connection: %s" % connection)
-                flask.abort(404)
             try:
+                if connection not in self.config['robot']['connections']:
+                    rospy.logerr("Requested undefined connection: %s" %
+                                 connection)
+                    flask.abort(404)
+                if not self.running:
+                    rospy.logerr("Can't call connection when not running.")
+                    flask.abort(400)
                 return flask.jsonify(
                     jsonpickle.encode(
                         self._call_connection(connection,
@@ -406,66 +429,122 @@ class RobotController(object):
 
         @robot_flask.route('/is_collided', methods=['GET'])
         def __is_collided():
-            return flask.jsonify({'is_collided': self.instance.is_collided()})
+            try:
+                return flask.jsonify({
+                    'is_collided':
+                        self.instance.is_collided() if self.running else False
+                })
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/is_dirty', methods=['GET'])
         def __is_dirty():
-            return flask.jsonify({'is_dirty': self.instance.is_dirty()})
+            try:
+                return flask.jsonify({
+                    'is_dirty':
+                        self.instance.is_dirty() if self.running else False
+                })
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/is_finished', methods=['GET'])
         def __is_finished():
-            return flask.jsonify({
-                'is_finished':
-                    (False if 'trajectory_pose_next' not in self.state else
-                     self.state['trajectory_pose_next'] >= len(
-                         self.state['trajectory_poses']))
-            })
+            try:
+                return flask.jsonify({
+                    'is_finished':
+                        (False if 'trajectory_pose_next' not in self.state else
+                         self.state['trajectory_pose_next'] >= len(
+                             self.state['trajectory_poses']))
+                })
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/is_running', methods=['GET'])
         def __is_running():
             try:
-                return flask.jsonify(
-                    {'is_running': self.instance.is_running()})
-            except Exception as e:
-                rospy.logerr(e)
+                return flask.jsonify({
+                    'is_running':
+                        self.instance.is_running() if self.prepared else False
+                })
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/next', methods=['GET'])
         def __next():
             try:
-                if self._env_next() == 0:
-                    raise ValueError(
+                if not self.running:
+                    success = False
+                elif self._env_next() == 0:
+                    rospy.logerr(
                         "There is no next map; at the end of the list")
-                self.stop()
-                self.state['selected_environment'] = self._env_next()
-                self.start()
-                success = True
-            except Exception as e:
-                rospy.logerr(e)
-                success = False
-            return flask.jsonify({'next_success': success})
+                    success = False
+                else:
+                    self.stop()
+                    self.state['selected_environment'] = self._env_next()
+                    self.start()
+                    success = True
+                return flask.jsonify({'next_success': success})
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
+
+        @robot_flask.route('/prepare', methods=['GET'])
+        def __prepare():
+            try:
+                if not self.config_valid:
+                    rospy.logerr("Controller needs a valid config to prepare.")
+                    success = False
+                else:
+                    print("Preparing the requested controller ...", end="")
+                    sys.stdout.flush()
+                    success = self.prepare()
+                    print("Done")
+                return flask.jsonify({'prepare_success': success})
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/reset', methods=['GET'])
         def __reset():
-            # Resets the robot in the current scene
+            # Resets the robot to the FIRST scene
             try:
-                self.restart()
-                success = self.instance.is_running()
-            except Exception as e:
-                rospy.logerr(e)
-                success = False
-            return flask.jsonify({'reset_success': success})
+                if not self.running:
+                    success = False
+                else:
+                    self.stop()
+                    self.wipe()
+                    success = self.start()
+                return flask.jsonify({'reset_success': success})
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/restart', methods=['GET'])
         def __restart():
-            # Restarts the robot in the FIRST scene
-            self.wipe()
-            resp = __reset()
-            resp.data = resp.data.replace('reset', 'restart')
-            return resp
+            # Restarts the robot in the CURRENT scene
+            try:
+                if not self.running:
+                    success = False
+                else:
+                    self.stop()
+                    success = self.start()
+                return flask.jsonify({'restart_success': success})
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/selected_environment', methods=['GET'])
         def __selected_env():
             try:
+                if not self.config_valid:
+                    rospy.logerr(
+                        "Controller needs a valid config to select an environment."
+                    )
+                    flask.abort(404)
                 return flask.jsonify({
                     'name':
                         self.config['environments']
@@ -476,26 +555,42 @@ class RobotController(object):
                     'number':
                         self.state['selected_environment']
                 })
-            except Exception as e:
-                rospy.logerr(e)
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/start', methods=['GET'])
         def __start():
             try:
-                if not self.config_valid:
-                    rospy.logwarn(
-                        "Can't start controller without a valid config")
+                if not self.prepared:
+                    rospy.logerr(
+                        "Controller needs to be prepared before starting; "
+                        "run /prepare.")
                     success = False
-                else
-                    print("Starting the requested robot stack ... ", end="")
+                else:
+                    print(
+                        "Starting the requested run in running controller ... ",
+                        end="")
                     sys.stdout.flush()
-                    self.start()
+                    success = self.start()
                     print("Done")
+                return flask.jsonify({'start_success': success})
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
+
+        @robot_flask.route('/stop', methods=['GET'])
+        def __stop():
+            try:
+                if not self.prepared or not self.running:
                     success = True
-            except Exception as e:
-                rospy.logerr(e)
-                success = False
-            return flask.jsonify({'start_success': success})
+                else:
+                    self.stop()
+                    success = True
+                return flask.jsonify({'stop_success': success})
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         # Configure our server
         robot_server = pywsgi.WSGIServer(
