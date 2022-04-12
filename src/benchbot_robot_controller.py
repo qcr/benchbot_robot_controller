@@ -209,45 +209,24 @@ class ControllerInstance(object):
                   "Please stop the existing instance before starting again.")
             return False
 
-        # Get a set of commands by replacing variables with the config values
-        self._cmds = [
-            self._replace_variables(c) for c in self.config_robot['start_cmds']
-        ]
+        # Get the start command by replacing variables with config values
+        cmd = self._replace_variables(self.config_robot['start_cmd'])
 
-        # Start the set of commands, holding onto the process so we can manage
-        # the lifecycle
-        self.start_logging()
-        self._processes = [
-            subprocess.Popen(c,
-                             shell=True,
-                             executable='/bin/bash',
-                             stdout=l,
-                             stderr=l,
-                             preexec_fn=os.setsid)
-            for c, l in zip(self._cmds, self._log_files)
-        ]
-
-        # Wait until we move into a running state
-        start_time = time.time()
-        while not self.is_running():
+        # Attempt to execute the command, returning the result
+        p = subprocess.Popen(cmd, shell=True, executable='/bin/bash')
+        start = time.time()
+        status = p.poll()
+        while status is None:
             if self._events and self._events.wait(0.25):
                 return False
-            if not self.health_check(check_running=False):
+            elif (time.time() - start > TIMEOUT_RUN):
+                print("\nFAILED TO START INSTANCE AFTER %ss" % TIMEOUT_RUN)
                 return False
-            elif (time.time() - start_time > TIMEOUT_STARTUP and
-                  not self.health_check()):
-                print("\nROBOT WAS NOT DETECTED TO BE RUNNING AFTER %ss (no "
-                      "data on ROS TOPICS). DUMPING LOGS FOR ALL COMMANDS..." %
-                      TIMEOUT_STARTUP)
-                for i, _ in enumerate(self._cmds):
-                    print("COMMAND:")
-                    print("\t%s" % self._cmds[i])
-                    print("OUTPUT:")
-                    with open(
-                            os.path.join(self.config_robot['logs_dir'],
-                                         str(i)), 'r') as f:
-                        print(f.read())
-                return False
+
+        if status > 0:
+            print("\nCOMMAND TO START INSTANCE HAD NON-ZERO RETURN CODE (%d)" %
+                  status)
+            return False
         return True
 
     def start_logging(self):
