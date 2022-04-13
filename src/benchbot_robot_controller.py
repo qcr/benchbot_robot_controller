@@ -27,6 +27,7 @@ DEFAULT_CONFIG_ROBOT = {
     'persistent_cmds': [],
     'persistent_status': ':',
     'run_cmd': ':',
+    'stop_cmd': ':'
 }
 
 DEFAULT_CONFIG_ENV = {"object_labels": []}
