@@ -102,7 +102,8 @@ class ControllerInstance(object):
         # Stop all of the open processes & logging
         for p in self._processes:
             try:
-                os.killpg(os.getpgid(p.pid), signal.SIGINT)
+                os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+                os.killpg(os.getpgid(p.pid), signal.SIGTERM)
             except Exception as e:
                 print(e)
                 pass
@@ -160,6 +161,7 @@ class ControllerInstance(object):
     def prepare(self):
         if self.prepared:
             self.destroy()
+        self.prepared = False
 
         # Get a set of commands by replacing variables with the config values
         self._cmds = [
@@ -201,6 +203,7 @@ class ControllerInstance(object):
                 return False
             elif not self._events:
                 time.sleep(0.25)
+        self.prepared = True
         return True
 
     def start(self):
