@@ -218,7 +218,7 @@ class ControllerInstance(object):
             return False
 
         # Get the start command by replacing variables with config values
-        cmd = self._replace_variables(self.config_robot['start_cmd'])
+        cmd = self._replace_variables(self.config_robot['run_cmd'])
 
         # Attempt to execute the command, returning the result
         p = subprocess.Popen(cmd, shell=True, executable='/bin/bash')
@@ -232,6 +232,7 @@ class ControllerInstance(object):
                 return False
             elif not self._events:
                 time.sleep(0.25)
+            status = p.poll()
 
         if status > 0:
             print("\nCOMMAND TO START INSTANCE HAD NON-ZERO RETURN CODE (%d)" %
