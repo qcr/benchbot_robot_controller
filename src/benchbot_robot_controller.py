@@ -575,7 +575,7 @@ class RobotController(object):
                     rospy.logerr("Controller needs a valid config to prepare.")
                     success = False
                 else:
-                    print("Preparing the requested controller ...", end="")
+                    print("Preparing the requested controller ... ", end="")
                     sys.stdout.flush()
                     success = self.prepare()
                     print("Done")
