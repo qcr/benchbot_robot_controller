@@ -102,6 +102,9 @@ class ControllerInstance(object):
         # Stop all of the open processes & logging
         for p in self._processes:
             try:
+                # Have to do this twice because some Omniverse children simply
+                # do not respond to the first terminate signal. No idea whether
+                # this is BenchBot's issue or Omniverse's at this point.
                 os.killpg(os.getpgid(p.pid), signal.SIGTERM)
                 os.killpg(os.getpgid(p.pid), signal.SIGTERM)
             except Exception as e:
