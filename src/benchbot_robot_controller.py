@@ -24,7 +24,9 @@ DEFAULT_CONFIG_ROBOT = {
     'file_dirty_state': '/tmp/benchbot_dirty',
     'file_collisions': '/tmp/benchbot_collision',
     'logs_dir': '/tmp/benchbot_logs',
-    'start_cmds': [],
+    'persistent_cmds': [],
+    'persistent_status': ':',
+    'run_cmd': ':',
 }
 
 DEFAULT_CONFIG_ENV = {"object_labels": []}
