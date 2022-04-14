@@ -265,6 +265,7 @@ class ControllerInstance(object):
                 return False
             elif not self._events:
                 time.sleep(0.25)
+            status = p.poll()
 
         # Clear all temporary files
         for f in [
