@@ -21,7 +21,7 @@ import rospy
 import tf2_ros
 import transforms3d as t3
 from geometry_msgs.msg import (Point, Pose, Quaternion, Transform,
-                               TransformStamped, Vector3)
+                               TransformStamped, Twist, Vector3)
 from nav_msgs.msg import Odometry
 
 
@@ -49,9 +49,7 @@ class PoseNoisifier(object):
 
     def __init__(self):
         self.in_topic_odom = rospy.get_param("in_topic_odom", "/odom_raw")
-        self.in_frame_odom = rospy.get_param("in_frame_odom", "odom_raw")
-        self.in_frame_robot = rospy.get_param("in_frame_robot",
-                                              "base_link_raw")
+        self.in_topic_vel = rospy.get_param("in_topic_vel", "/cmd_vel")
 
         self.out_topic_odom = rospy.get_param("out_topic_odom", "/odom")
         self.out_frame_map = rospy.get_param("out_frame_map", "map")
@@ -68,17 +66,25 @@ class PoseNoisifier(object):
         self._start_pose_SE3 = sp.wxyzXYZ_to_SE3(
             *np.array([float(x.strip()) for x in self.start_pose.split(',')]))
 
+        self._accumulated_error = np.eye(4)
+        self._last_vel = None
+
+        self._tf = tf2_ros.TransformBroadcaster()
+
         self._pub_odom = rospy.Publisher(self.out_topic_odom,
                                          Odometry,
                                          queue_size=1)
         self._sub_odom = rospy.Subscriber(self.in_topic_odom, Odometry,
                                           self.pub)
-
-        self._accumulated_error = np.eye(4)
-
-        self._tf = tf2_ros.TransformBroadcaster()
+        self._sub_vel = rospy.Subscriber(self.in_topic_vel, Twist,
+                                         self.update_vel)
 
     def pub(self, odom_msg):
+        if self._last_vel is None:
+            rospy.logwarn("Waiting for cmd_vel on topic '%s' ..." %
+                          self.in_topic_vel)
+            return
+
         # Translate our clean odom into a noisy odom
         noisy_odom = np.matmul(sp.pose_msg_to_SE3(odom_msg.pose),
                                self._accumulated_error)
@@ -96,7 +102,7 @@ class PoseNoisifier(object):
         o.child_frame_id = self.out_frame_robot
         o.pose.pose = _SE3_to_pose_msg(noisy_odom)
         o.pose.covariance = odom_msg.pose.covariance
-        o.twist = odom_msg.twist
+        o.twist = self._last_vel
         self._pub_odom.publish(o)
 
         t = TransformStamped()
@@ -117,13 +123,16 @@ class PoseNoisifier(object):
         self._accumulated_error = np.matmul(
             self._accumulated_error,
             np.matmul(
-                sp.SE3_from_translation(odom_msg.twist.twist.linear.x *
+                sp.SE3_from_translation(self._last_vel.linear.x *
                                         _noisy(self.noise_linear)),
-                sp.SE3_from_yaw(odom_msg.twist.twist.angular.z *
+                sp.SE3_from_yaw(self._last_vel.angular.z *
                                 _noisy(self.noise_angular))),
         )
         print(sp.rpy_from_SE3(self._accumulated_error),
               self._accumulated_error[0:3, 3])
+
+    def update_vel(self, vel_msg):
+        self._last_vel = vel_msg
 
 
 if __name__ == '__main__':
