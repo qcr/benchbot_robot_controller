@@ -1,8 +1,8 @@
 import numpy as np
 import ros_numpy
 import rospy
-
 from geometry_msgs.msg import Twist
+from . import spatial as sp
 
 _DEFAULT_SPEED_FACTOR = 1
 
@@ -29,7 +29,7 @@ def _define_initial_pose(controller):
     # Check if we need to define initial pose (clean state and not already initialised)
     if (not controller.instance.is_dirty() and
             'initial_pose' not in controller.state.keys()):
-        controller.state['initial_pose'] = __tf_msg_to_SE3(
+        controller.state['initial_pose'] = sp.tf_msg_to_SE3(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'],
                 controller.config['robot']['robot_frame'], rospy.Time()))
@@ -42,7 +42,7 @@ def _get_noisy_pose(controller, child_frame):
 
     # Get the pose of child_frame w.r.t odom
     # TODO check if we should change odom from fixed name to definable
-    odom_t_child = __tf_msg_to_SE3(
+    odom_t_child = sp.tf_msg_to_SE3(
         controller.tf_buffer.lookup_transform('odom', child_frame,
                                               rospy.Time()))
     # Noisy child should be init pose + odom_t_child
@@ -57,7 +57,7 @@ def _current_pose(controller):
     if 'ground_truth' in controller.config['task']['name']:
         # TF tree by default provides poses such that robot pose is GT
         # Just return the transform in the tree
-        return __tf_msg_to_SE3(
+        return sp.tf_msg_to_SE3(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'],
                 controller.config['robot']['robot_frame'], rospy.Time()))
@@ -74,7 +74,7 @@ def _move_speed_factor(controller):
 
 def _move_to_angle(goal, publisher, controller):
     # Servo until orientation matches that of the requested goal
-    g = __SE3_to_SE2(goal)
+    g = sp.SE3_to_SE2(goal)
 
     gamma = None
     vel_msg = Twist()
@@ -83,8 +83,8 @@ def _move_to_angle(goal, publisher, controller):
            not controller.instance.is_collided() and
            (gamma is None or np.abs(gamma) > _MOVE_TOL_YAW)):
         # Get latest orientation error
-        current = __SE3_to_SE2(_current_pose(controller))
-        gamma = __yaw_from_SE2(np.matmul(np.linalg.inv(current), g))
+        current = sp.SE3_to_SE2(_current_pose(controller))
+        gamma = sp.yaw_from_SE2(np.matmul(np.linalg.inv(current), g))
 
         # Construct angular msg, with velocities clamped
         vel_msg.angular.z = (_move_speed_factor(controller) * _MOVE_ANGLE_K *
@@ -103,7 +103,7 @@ def _move_to_angle(goal, publisher, controller):
 def _move_to_pose(goal, publisher, controller):
     # Servo to desired pose using control described in Robotics, Vision, &
     # Control 2nd Ed (Corke, p. 108)
-    g = __SE3_to_SE2(goal)
+    g = sp.SE3_to_SE2(goal)
 
     rho = None
     vel_msg = Twist()
@@ -112,13 +112,13 @@ def _move_to_pose(goal, publisher, controller):
            not controller.instance.is_collided() and
            (rho is None or rho > _MOVE_TOL_DIST)):
         # Get latest position error
-        current = __SE3_to_SE2(_current_pose(controller))
+        current = sp.SE3_to_SE2(_current_pose(controller))
         error = np.matmul(np.linalg.inv(current), g)
 
         # Calculate values used in the controller
         rho = np.linalg.norm(error[0:2, 2])
         alpha = np.arctan2(error[1, 2], error[0, 2])
-        beta = __pi_wrap(-__yaw_from_SE2(current) - alpha + __yaw_from_SE2(g))
+        beta = sp.pi_wrap(-sp.yaw_from_SE2(current) - alpha + sp.yaw_from_SE2(g))
 
         # Construct velocity message
         backwards = (rho > _MOVE_TOL_DIST and
@@ -126,8 +126,8 @@ def _move_to_pose(goal, publisher, controller):
         if backwards:
             vel_msg.linear.x = -1 * _MOVE_POSE_K_RHO * rho
             vel_msg.angular.z = (
-                _MOVE_POSE_K_ALPHA * __pi_wrap(alpha + np.pi) +
-                _MOVE_POSE_K_BETA * __pi_wrap(beta + np.pi))
+                _MOVE_POSE_K_ALPHA * sp.pi_wrap(alpha + np.pi) +
+                _MOVE_POSE_K_BETA * sp.pi_wrap(beta + np.pi))
         else:
             vel_msg.linear.x = _MOVE_POSE_K_RHO * rho
             vel_msg.angular.z = (_MOVE_POSE_K_ALPHA * alpha +
@@ -161,7 +161,7 @@ def create_pose_list(data, controller):
     # Check what mode we are in for poses (ground_truth or noisy)
     gt_mode = controller.config['task']['localisation'] != 'noisy'
     tfs = {
-        p: __tf_msg_to_SE3(
+        p: sp.tf_msg_to_SE3(
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'], p, rospy.Time()))
         if gt_mode else _get_noisy_pose(controller, p)
@@ -179,8 +179,8 @@ def create_pose_list(data, controller):
         'camera' if 'left_camera' in k else k: {
             'parent_frame': controller.config['robot']['global_frame'],
             'translation_xyz': v[0:3, 3],
-            'rotation_rpy': __rpy_from_SE3(v),
-            'rotation_xyzw': __quat_from_SE3(v)
+            'rotation_rpy': sp.rpy_from_SE3(v),
+            'rotation_xyzw': sp.quat_from_SE3(v)
         } for k, v in tfs.items()
     }
 
@@ -219,7 +219,7 @@ def encode_laserscan(data, controller):
         'scans':
             np.array([[
                 data.ranges[i],
-                __pi_wrap(data.angle_min + i * data.angle_increment)
+                sp.pi_wrap(data.angle_min + i * data.angle_increment)
             ] for i in range(0, len(data.ranges))]),
         'range_min':
             data.range_min,
@@ -233,7 +233,7 @@ def move_angle(data, publisher, controller):
     _move_to_pose(
         np.matmul(
             _current_pose(controller),
-            __SE3_from_yaw(np.deg2rad(__safe_dict_get(data, 'angle', 0)))),
+            sp.SE3_from_yaw(np.deg2rad(__safe_dict_get(data, 'angle', 0)))),
         publisher, controller)
 
 
@@ -241,7 +241,7 @@ def move_distance(data, publisher, controller):
     # Derive a corresponding goal pose & send the robot there
     _move_to_pose(
         np.matmul(_current_pose(controller),
-                  __SE3_from_translation(__safe_dict_get(data, 'distance',
+                  sp.SE3_from_translation(__safe_dict_get(data, 'distance',
                                                          0))), publisher,
         controller)
 
@@ -257,7 +257,7 @@ def move_next(data, publisher, controller):
     # Servo to the goal pose
     t = controller.state['trajectory_poses'][
         controller.state['trajectory_pose_next']]
-    _move_to_pose(__xyzwXYZ_to_SE3(*np.array(t)[[1, 2, 3, 0, 4, 5, 6]]),
+    _move_to_pose(sp.xyzwXYZ_to_SE3(*np.array(t)[[1, 2, 3, 0, 4, 5, 6]]),
                   publisher, controller)
 
     # Register that we completed this goal
