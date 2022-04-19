@@ -1,7 +1,6 @@
 import numpy as np
 import ros_numpy
 import rospy
-import transforms3d as t3
 
 from geometry_msgs.msg import Twist
 
@@ -20,56 +19,6 @@ _MOVE_POSE_K_BETA = -1.5
 
 _MOVE_LINEAR_LIMITS = [-0.6, 2.0]
 _MOVE_ANGULAR_LIMIT = 0.5
-
-
-def __quat_from_SE3(pose):
-    return t3.quaternions.mat2quat(pose[0:3, 0:3])[[1, 2, 3, 0]]
-
-
-def __rpy_from_SE3(pose):
-    return t3.euler.mat2euler(pose[0:3, 0:3])
-
-
-def __SE2_to_xyt(pose):
-    return np.array([pose[0,2], pose[1,2], __yaw_from_SE2(pose)])
-
-
-def __SE3_from_translation(x=0, y=0, z=0):
-    p = np.eye(4)
-    p[0:3, 3] = np.array([x, y, z])
-    return p
-
-def __SE3_from_yaw(yaw):
-    x = np.eye(4)
-    x[0:3, 0:3] = t3.euler.euler2mat(0, 0, yaw)
-    return x
-
-
-def __SE3_to_SE2(pose):
-    y = t3.euler.mat2euler(pose[0:3, 0:3])[2]
-    return np.array([[np.cos(y), -np.sin(y), pose[0, 3]],
-                     [np.sin(y), np.cos(y), pose[1, 3]], [0, 0, 1]])
-
-
-def __tf_msg_to_SE3(tf_msg):
-    t = tf_msg.transform.translation
-    r = tf_msg.transform.rotation
-    return t3.affines.compose([t.x, t.y, t.z],
-                              t3.quaternions.quat2mat([r.w, r.x, r.y, r.z]),
-                              [1] * 3)
-
-
-def __xyzwXYZ_to_SE3(x, y, z, w, X, Y, Z):
-    return t3.affines.compose([X, Y, Z], t3.quaternions.quat2mat([w, x, y, z]),
-                              [1] * 3)
-
-
-def __yaw_from_SE2(pose):
-    return np.arctan2(pose[1, 0], pose[0, 0])
-
-
-def __pi_wrap(angle):
-    return np.mod(angle + np.pi, 2 * np.pi) - np.pi
 
 
 def __safe_dict_get(d, key, default):
