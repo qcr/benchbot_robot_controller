@@ -15,8 +15,9 @@
 #       Linear vel noise = N(0, linear_vel * noise_linear)
 #       Angular vel noise = N(0, angular_vel * noise_angular)
 
+import benchbot_spatial as sp
+import numpy as np
 import rospy
-
 from nav_msgs.msg import Odometry
 
 
@@ -29,6 +30,7 @@ class PoseNoisifier(object):
                                               "base_link_raw")
 
         self.out_topic_odom = rospy.get_param("out_topic_odom", "/odom_raw")
+        self.out_frame_map = rospy.get_param("out_frame_map", "map")
         self.out_frame_odom = rospy.get_param("out_frame_odom", "odom")
         self.out_frame_robot = rospy.get_param("out_frame_robot", "base_link")
 
@@ -39,6 +41,8 @@ class PoseNoisifier(object):
 
         self.start_pose = rospy.get_param("start_pose",
                                           "1,0,0,0,0,0,0")  # w,x,y,z,X,Y,Z
+        self._start_pose_SE3 = sp.wxyzXYZ_to_SE3(
+            *np.array([float(x.strip()) for x in self.start_pose.split(',')]))
 
         self._pub_odom = rospy.Publisher(self.out_topic_odom,
                                          Odometry,
@@ -46,9 +50,24 @@ class PoseNoisifier(object):
         self._sub_odom = rospy.Subscriber(self.in_topic_odom, Odometry,
                                           self.pub)
 
+        self._accumulated_noise = np.eye(4)
+
     def pub(self, odom_msg):
-        print("tic")
-        pass
+        # Translate our clean odom into a noisy odom
+        noisy_odom = np.matmul(sp.pose_msg_to_SE3(odom_msg.pose),
+                               self._accumulated_noise)
+
+        # Define "localisation" transform from map frame to odom based on our
+        # mode
+        localisation = (np.matmul(np.linalg.inv(self._accumulated_noise),
+                                  self._start_pose_SE3)
+                        if self.ground_truth else self._start_pose_SE3)
+
+        # Publish our messages
+        # TODO
+
+        # Update accumulated noise
+        # TODO
 
 
 if __name__ == '__main__':
