@@ -10,13 +10,36 @@
 
 import rospy
 
+from nav_msgs.msg import Odometry
+
+
+class PoseNoisifier(object):
+
+    def __init__(self):
+        self.in_topic_odom = rospy.get_param("in_topic_odom", "/odom_raw")
+        self.in_frame_odom = rospy.get_param("in_frame_odom", "odom_raw")
+        self.in_frame_robot = rospy.get_param("in_frame_robot",
+                                              "base_link_raw")
+
+        self.out_topic_odom = rospy.get_param("out_topic_odom", "/odom_raw")
+        self.out_frame_odom = rospy.get_param("out_frame_odom", "odom")
+        self.out_frame_robot = rospy.get_param("out_frame_robot", "base_link")
+
+        self.ground_truth = rospy.get_param("ground_truth", False)
+
+        self.start_pose = rospy.get_param("start_pose",
+                                          "1,0,0,0,0,0,0")  # w,x,y,z,X,Y,Z
+
+        self._pub_odom = rospy.Publisher(self.out_topic_odom, Odometry)
+        self._sub_odom = rospy.Subscriber(self.in_topic_odom, Odometry,
+                                          self.pub)
+
+    def pub(self, odom_msg):
+        print("tic")
+        pass
+
+
 if __name__ == '__main__':
     rospy.init_node("noisify_pose")
 
-    in_frame_odom = rospy.get_param("in_frame_odom", "odom_raw")
-    in_frame_robot = rospy.get_param("in_frame_robot", "base_link_raw")
-
-    out_frame_odom = rospy.get_param("out_frame_odom", "odom")
-    out_frame_robot = rospy.get_param("out_frame_robot", "base_link")
-
-    ground_truth = rospy.get_param("ground_truth", False)
+    rospy.spin()
