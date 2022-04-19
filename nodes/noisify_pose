@@ -27,7 +27,7 @@ from nav_msgs.msg import Odometry
 
 def _SE3_to_pose_msg(pose):
     return Pose(
-        point=Point(*pose[0:3, 3]),
+        position=Point(*pose[0:3, 3]),
         orientation=Quaternion(
             *np.roll(t3.quaternions.mat2quat(pose[0:3, 0:3]), -1)),
     )
@@ -35,9 +35,9 @@ def _SE3_to_pose_msg(pose):
 
 def _SE3_to_tf_msg(pose):
     return Transform(
-        point=Vector3(*pose[0:3, 3]),
-        orientation=Quaternion(
-            *np.roll(t3.quaternions.mat2quat(pose[0:3, 0:3]), -1)),
+        translation=Vector3(*pose[0:3, 3]),
+        rotation=Quaternion(*np.roll(t3.quaternions.mat2quat(pose[0:3,
+                                                                  0:3]), -1)),
     )
 
 
@@ -49,7 +49,7 @@ class PoseNoisifier(object):
         self.in_frame_robot = rospy.get_param("in_frame_robot",
                                               "base_link_raw")
 
-        self.out_topic_odom = rospy.get_param("out_topic_odom", "/odom_raw")
+        self.out_topic_odom = rospy.get_param("out_topic_odom", "/odom")
         self.out_frame_map = rospy.get_param("out_frame_map", "map")
         self.out_frame_odom = rospy.get_param("out_frame_odom", "odom")
         self.out_frame_robot = rospy.get_param("out_frame_robot", "base_link")
