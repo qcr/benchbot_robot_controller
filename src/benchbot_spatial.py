@@ -12,6 +12,11 @@ def quat_from_SE3(pose):
     return t3.quaternions.mat2quat(pose[0:3, 0:3])[[1, 2, 3, 0]]
 
 
+def quat_msg_to_SE3(quat_msg):
+    return xyzwXYZ_to_SE3(quat_msg.x, quat_msg.y, quat_msg.z, quat_msg.w, 0, 0,
+                          0)
+
+
 def pose_msg_to_SE3(pose_msg):
     t = pose_msg.pose.position
     r = pose_msg.pose.orientation

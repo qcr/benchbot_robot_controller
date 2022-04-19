@@ -25,6 +25,10 @@ from geometry_msgs.msg import (Point, Pose, Quaternion, Transform,
 from nav_msgs.msg import Odometry
 
 
+def _noisy(std_dev):
+    return std_dev * np.random.randn()
+
+
 def _SE3_to_pose_msg(pose):
     return Pose(
         position=Point(*pose[0:3, 3]),
@@ -70,26 +74,30 @@ class PoseNoisifier(object):
         self._sub_odom = rospy.Subscriber(self.in_topic_odom, Odometry,
                                           self.pub)
 
-        self._accumulated_noise = np.eye(4)
+        self._accumulated_error = np.eye(4)
 
         self._tf = tf2_ros.TransformBroadcaster()
 
     def pub(self, odom_msg):
         # Translate our clean odom into a noisy odom
         noisy_odom = np.matmul(sp.pose_msg_to_SE3(odom_msg.pose),
-                               self._accumulated_noise)
+                               self._accumulated_error)
 
         # Define "localisation" transform from map frame to odom based on our
         # mode
-        localisation = (np.matmul(np.linalg.inv(self._accumulated_noise),
+        localisation = (np.matmul(np.linalg.inv(self._accumulated_error),
                                   self._start_pose_SE3)
                         if self.ground_truth else self._start_pose_SE3)
 
         # Publish our messages
-        odom_msg.header.frame_id = self.out_frame_odom
-        odom_msg.child_frame_id = self.out_frame_robot
-        odom_msg.pose.pose = _SE3_to_pose_msg(noisy_odom)
-        self._pub_odom.publish(odom_msg)
+        o = Odometry()
+        o.header.stamp = odom_msg.header.stamp
+        o.header.frame_id = self.out_frame_odom
+        o.child_frame_id = self.out_frame_robot
+        o.pose.pose = _SE3_to_pose_msg(noisy_odom)
+        o.pose.covariance = odom_msg.pose.covariance
+        o.twist = odom_msg.twist
+        self._pub_odom.publish(o)
 
         t = TransformStamped()
         t.header.stamp = odom_msg.header.stamp
@@ -106,7 +114,16 @@ class PoseNoisifier(object):
         self._tf.sendTransform(t)
 
         # Update accumulated noise
-        # TODO
+        self._accumulated_error = np.matmul(
+            self._accumulated_error,
+            np.matmul(
+                sp.SE3_from_translation(odom_msg.twist.twist.linear.x *
+                                        _noisy(self.noise_linear)),
+                sp.SE3_from_yaw(odom_msg.twist.twist.angular.z *
+                                _noisy(self.noise_angular))),
+        )
+        print(sp.rpy_from_SE3(self._accumulated_error),
+              self._accumulated_error[0:3, 3])
 
 
 if __name__ == '__main__':
