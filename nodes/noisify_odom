@@ -4,9 +4,13 @@
 # noisy "odom -> base_link" + "map -> odom" corrections when localisation
 # approach typical in robotics.
 #
-# "map -> odom" will be the start pose if 'ground_truth' is False, otherwise it
-# will be the delta between our generated noisy "odom -> base_link" link and
-# the true pose.
+# We assume that "map -> odom" is not currently defined, but is instead
+# provided by the "start_pose" param. The provided "odom -> base_link" is then
+# pulled from the odometry on "in_topic_odom".
+#
+# The "map -> base_link" transform is left unchanged, but it now consists of a
+# noisy "odom -> base_link" link plus ground truth "map -> odom" localisation
+# link.
 #
 # Noise model is basic zero-mean Gaussian noise on velocity, but scaled by the
 # velocity.  This leads to desirable results like 0 velocity having no noise /
@@ -23,7 +27,7 @@ import transforms3d as t3
 from geometry_msgs.msg import (Point, Pose, Quaternion, Transform,
                                TransformStamped, Twist, Vector3)
 from nav_msgs.msg import Odometry
-from std_msgs.msg import Empty
+from std_msgs.msg import String
 
 
 def _noisy(std_dev):
@@ -50,8 +54,8 @@ class PoseNoisifier(object):
 
     def __init__(self):
         self.in_topic_odom = rospy.get_param("in_topic_odom", "/odom_raw")
-        self.in_topic_reset = rospy.get_param("in_topic_reset",
-                                              "/odom_noise_reset")
+        self.in_topic_start_pose = rospy.get_param("in_topic_start_pose",
+                                                   "/odom_start_pose")
         self.in_topic_vel = rospy.get_param("in_topic_vel", "/cmd_vel")
 
         self.out_topic_odom = rospy.get_param("out_topic_odom", "/odom")
@@ -59,15 +63,10 @@ class PoseNoisifier(object):
         self.out_frame_odom = rospy.get_param("out_frame_odom", "odom")
         self.out_frame_robot = rospy.get_param("out_frame_robot", "base_link")
 
-        self.ground_truth = rospy.get_param("ground_truth", False)
-
         self.noise_angular = rospy.get_param("noise_angular", 0.1)
         self.noise_linear = rospy.get_param("noise_linear", 0.1)
 
-        self.start_pose = rospy.get_param("start_pose",
-                                          "1,0,0,0,0,0,0")  # w,x,y,z,X,Y,Z
-        self._start_pose_SE3 = sp.wxyzXYZ_to_SE3(
-            *np.array([float(x.strip()) for x in self.start_pose.split(',')]))
+        self._start_pose = None
 
         self._accumulated_error = np.eye(4)
         self._last_vel = None
@@ -79,26 +78,23 @@ class PoseNoisifier(object):
                                          queue_size=1)
         self._sub_odom = rospy.Subscriber(self.in_topic_odom, Odometry,
                                           self.pub)
-        self._sub_reset = rospy.Subscriber(self.in_topic_reset, Empty,
-                                           self.reset)
+        self._sub_start_pose = rospy.Subscriber(self.in_topic_start_pose,
+                                                String, self.update_start_pose)
         self._sub_vel = rospy.Subscriber(self.in_topic_vel, Twist,
                                          self.update_vel)
 
     def pub(self, odom_msg):
-        if self._last_vel is None:
-            rospy.logwarn("Waiting for cmd_vel on topic '%s' ..." %
-                          self.in_topic_vel)
+        # Bail if we don't have valid data to work with
+        if self._last_vel is None or self._start_pose is None:
             return
 
         # Translate our clean odom into a noisy odom
         noisy_odom = np.matmul(sp.pose_msg_to_SE3(odom_msg.pose),
                                self._accumulated_error)
 
-        # Define "localisation" transform from map frame to odom based on our
-        # mode
-        localisation = (np.matmul(np.linalg.inv(self._accumulated_error),
-                                  self._start_pose_SE3)
-                        if self.ground_truth else self._start_pose_SE3)
+        # Figure out "localisation" transform from map to odom frame
+        localisation = np.matmul(np.linalg.inv(self._accumulated_error),
+                                 self._start_pose)
 
         # Publish our messages
         o = Odometry()
@@ -136,8 +132,10 @@ class PoseNoisifier(object):
         print(sp.rpy_from_SE3(self._accumulated_error),
               self._accumulated_error[0:3, 3])
 
-    def reset(self, _):
+    def update_start_pose(self, start_pose_msg):
         self._accumulated_error = np.eye(4)
+        self._start_pose = sp.wxyzXYZ_to_SE3(*np.array(
+            [float(x.strip()) for x in start_pose_msg.data.split(',')]))
 
     def update_vel(self, vel_msg):
         self._last_vel = vel_msg

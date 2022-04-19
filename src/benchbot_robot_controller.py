@@ -160,7 +160,7 @@ class ControllerInstance(object):
                                            s.data_class,
                                            timeout=TIMEOUT_ROS_PING)
             except Exception as e:
-                # rospy.loginfo("FAILURE: %s" % e)
+                rospy.loginfo("FAILURE: %s" % e)
                 return False
             return True
 
