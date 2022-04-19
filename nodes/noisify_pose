@@ -25,7 +25,7 @@ from geometry_msgs.msg import (Point, Pose, Quaternion, Transform,
 from nav_msgs.msg import Odometry
 
 
-def __SE3_to_pose_msg(pose):
+def _SE3_to_pose_msg(pose):
     return Pose(
         point=Point(*pose[0:3, 3]),
         orientation=Quaternion(
@@ -33,7 +33,7 @@ def __SE3_to_pose_msg(pose):
     )
 
 
-def __SE3_to_tf_msg(pose):
+def _SE3_to_tf_msg(pose):
     return Transform(
         point=Vector3(*pose[0:3, 3]),
         orientation=Quaternion(
@@ -86,23 +86,23 @@ class PoseNoisifier(object):
                         if self.ground_truth else self._start_pose_SE3)
 
         # Publish our messages
-        odom_msg.header.frame_id = out_frame_odom
-        odom_msg.child_frame_id = out_frame_robot
-        odom_msg.pose.pose = __SE3_to_pose_msg(noisy_odom)
+        odom_msg.header.frame_id = self.out_frame_odom
+        odom_msg.child_frame_id = self.out_frame_robot
+        odom_msg.pose.pose = _SE3_to_pose_msg(noisy_odom)
         self._pub_odom.publish(odom_msg)
 
         t = TransformStamped()
         t.header.stamp = odom_msg.header.stamp
         t.header.frame_id = self.out_frame_map
         t.child_frame_id = self.out_frame_odom
-        t.transform = __SE3_to_tf_msg(localisation)
+        t.transform = _SE3_to_tf_msg(localisation)
         self._tf.sendTransform(t)
 
         t = TransformStamped()
         t.header.stamp = odom_msg.header.stamp
         t.header.frame_id = self.out_frame_odom
         t.child_frame_id = self.out_frame_robot
-        t.transform = __SE3_to_tf_msg(noisy_odom)
+        t.transform = _SE3_to_tf_msg(noisy_odom)
         self._tf.sendTransform(t)
 
         # Update accumulated noise
