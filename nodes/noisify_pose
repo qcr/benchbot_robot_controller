@@ -30,7 +30,9 @@ class PoseNoisifier(object):
         self.start_pose = rospy.get_param("start_pose",
                                           "1,0,0,0,0,0,0")  # w,x,y,z,X,Y,Z
 
-        self._pub_odom = rospy.Publisher(self.out_topic_odom, Odometry)
+        self._pub_odom = rospy.Publisher(self.out_topic_odom,
+                                         Odometry,
+                                         queue_size=1)
         self._sub_odom = rospy.Subscriber(self.in_topic_odom, Odometry,
                                           self.pub)
 
@@ -41,5 +43,7 @@ class PoseNoisifier(object):
 
 if __name__ == '__main__':
     rospy.init_node("noisify_pose")
+
+    pn = PoseNoisifier()
 
     rospy.spin()
