@@ -18,14 +18,24 @@
 import benchbot_spatial as sp
 import numpy as np
 import rospy
+import tf2_ros
 import transforms3d as t3
-from geometry_msgs.msg import Point, Pose, Quaternion
+from geometry_msgs.msg import (Point, Pose, Quaternion, Transform,
+                               TransformStamped, Vector3)
 from nav_msgs.msg import Odometry
 
 
 def __SE3_to_pose_msg(pose):
     return Pose(
         point=Point(*pose[0:3, 3]),
+        orientation=Quaternion(
+            *np.roll(t3.quaternions.mat2quat(pose[0:3, 0:3]), -1)),
+    )
+
+
+def __SE3_to_tf_msg(pose):
+    return Transform(
+        point=Vector3(*pose[0:3, 3]),
         orientation=Quaternion(
             *np.roll(t3.quaternions.mat2quat(pose[0:3, 0:3]), -1)),
     )
@@ -62,6 +72,8 @@ class PoseNoisifier(object):
 
         self._accumulated_noise = np.eye(4)
 
+        self._tf = tf2_ros.TransformBroadcaster()
+
     def pub(self, odom_msg):
         # Translate our clean odom into a noisy odom
         noisy_odom = np.matmul(sp.pose_msg_to_SE3(odom_msg.pose),
@@ -78,6 +90,20 @@ class PoseNoisifier(object):
         odom_msg.child_frame_id = out_frame_robot
         odom_msg.pose.pose = __SE3_to_pose_msg(noisy_odom)
         self._pub_odom.publish(odom_msg)
+
+        t = TransformStamped()
+        t.header.stamp = odom_msg.header.stamp
+        t.header.frame_id = self.out_frame_map
+        t.child_frame_id = self.out_frame_odom
+        t.transform = __SE3_to_tf_msg(localisation)
+        self._tf.sendTransform(t)
+
+        t = TransformStamped()
+        t.header.stamp = odom_msg.header.stamp
+        t.header.frame_id = self.out_frame_odom
+        t.child_frame_id = self.out_frame_robot
+        t.transform = __SE3_to_tf_msg(noisy_odom)
+        self._tf.sendTransform(t)
 
         # Update accumulated noise
         # TODO
