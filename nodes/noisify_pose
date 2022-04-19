@@ -23,6 +23,7 @@ import transforms3d as t3
 from geometry_msgs.msg import (Point, Pose, Quaternion, Transform,
                                TransformStamped, Twist, Vector3)
 from nav_msgs.msg import Odometry
+from std_msgs.msg import Empty
 
 
 def _noisy(std_dev):
@@ -49,6 +50,8 @@ class PoseNoisifier(object):
 
     def __init__(self):
         self.in_topic_odom = rospy.get_param("in_topic_odom", "/odom_raw")
+        self.in_topic_reset = rospy.get_param("in_topic_reset",
+                                              "/odom_noise_reset")
         self.in_topic_vel = rospy.get_param("in_topic_vel", "/cmd_vel")
 
         self.out_topic_odom = rospy.get_param("out_topic_odom", "/odom")
@@ -76,6 +79,8 @@ class PoseNoisifier(object):
                                          queue_size=1)
         self._sub_odom = rospy.Subscriber(self.in_topic_odom, Odometry,
                                           self.pub)
+        self._sub_reset = rospy.Subscriber(self.in_topic_reset, Empty,
+                                           self.reset)
         self._sub_vel = rospy.Subscriber(self.in_topic_vel, Twist,
                                          self.update_vel)
 
@@ -130,6 +135,9 @@ class PoseNoisifier(object):
         )
         print(sp.rpy_from_SE3(self._accumulated_error),
               self._accumulated_error[0:3, 3])
+
+    def reset(self, _):
+        self._accumulated_error = np.eye(4)
 
     def update_vel(self, vel_msg):
         self._last_vel = vel_msg
