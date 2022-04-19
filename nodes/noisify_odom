@@ -139,8 +139,10 @@ class PoseNoisifier(object):
     def update_start_pose(self, start_pose_msg):
         with self._lock:
             self._accumulated_error = np.eye(4)
-            self._start_pose = sp.wxyzXYZ_to_SE3(*np.array(
-                [float(x.strip()) for x in start_pose_msg.data.split(',')]))
+            self._start_pose = sp.wxyzXYZ_to_SE3(*np.array([
+                float(x.strip()) for x in start_pose_msg.data.replace(
+                    '[', '').replace(']', '').split(',')
+            ]))
 
     def update_vel(self, vel_msg):
         with self._lock:
