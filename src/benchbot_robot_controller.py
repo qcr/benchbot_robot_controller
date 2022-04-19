@@ -693,8 +693,8 @@ class RobotController(object):
         print("Stopped")
 
     def set_config(self, config):
-        # Destroy any running instances
-        self.destroy()
+        # Stop any running instances
+        self.stop()
 
         # Copy in the merged dicts
         self.config = {
