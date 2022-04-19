@@ -18,7 +18,17 @@
 import benchbot_spatial as sp
 import numpy as np
 import rospy
+import transforms3d as t3
+from geometry_msgs.msg import Point, Pose, Quaternion
 from nav_msgs.msg import Odometry
+
+
+def __SE3_to_pose_msg(pose):
+    return Pose(
+        point=Point(*pose[0:3, 3]),
+        orientation=Quaternion(
+            *np.roll(t3.quaternions.mat2quat(pose[0:3, 0:3]), -1)),
+    )
 
 
 class PoseNoisifier(object):
@@ -64,7 +74,10 @@ class PoseNoisifier(object):
                         if self.ground_truth else self._start_pose_SE3)
 
         # Publish our messages
-        # TODO
+        odom_msg.header.frame_id = out_frame_odom
+        odom_msg.child_frame_id = out_frame_robot
+        odom_msg.pose.pose = __SE3_to_pose_msg(noisy_odom)
+        self._pub_odom.publish(odom_msg)
 
         # Update accumulated noise
         # TODO
