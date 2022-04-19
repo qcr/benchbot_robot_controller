@@ -7,6 +7,13 @@
 # "map -> odom" will be the start pose if 'ground_truth' is False, otherwise it
 # will be the delta between our generated noisy "odom -> base_link" link and
 # the true pose.
+#
+# Noise model is basic zero-mean Gaussian noise on velocity, but scaled by the
+# velocity.  This leads to desirable results like 0 velocity having no noise /
+# drift, and is tolerable within our velocity limits. May look at this making
+# something more mature in the future. Current:
+#       Linear vel noise = N(0, linear_vel * noise_linear)
+#       Angular vel noise = N(0, angular_vel * noise_angular)
 
 import rospy
 
@@ -26,6 +33,9 @@ class PoseNoisifier(object):
         self.out_frame_robot = rospy.get_param("out_frame_robot", "base_link")
 
         self.ground_truth = rospy.get_param("ground_truth", False)
+
+        self.noise_angular = rospy.get_param("noise_angular", 0.1)
+        self.noise_linear = rospy.get_param("noise_linear", 0.1)
 
         self.start_pose = rospy.get_param("start_pose",
                                           "1,0,0,0,0,0,0")  # w,x,y,z,X,Y,Z
