@@ -72,7 +72,7 @@ class PoseNoisifier(object):
         self._start_pose = None
 
         self._accumulated_error = np.eye(4)
-        self._last_vel = None
+        self._last_vel = Twist()
 
         self._tf = tf2_ros.TransformBroadcaster()
 
@@ -89,7 +89,7 @@ class PoseNoisifier(object):
     def pub(self, odom_msg):
         with self._lock:
             # Bail if we don't have valid data to work with
-            if self._last_vel is None or self._start_pose is None:
+            if self._start_pose is None:
                 return
 
             # Translate our clean odom into a noisy odom
