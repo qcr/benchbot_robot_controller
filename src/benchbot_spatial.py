@@ -54,6 +54,10 @@ def tf_msg_to_SE3(tf_msg):
                               [1] * 3)
 
 
+def wxyzXYZ_to_SE3(w, x, y, z, X, Y, Z):
+    return xyzwXYZ_to_SE3(x, y, z, w, X, Y, Z)
+
+
 def xyzwXYZ_to_SE3(x, y, z, w, X, Y, Z):
     return t3.affines.compose([X, Y, Z], t3.quaternions.quat2mat([w, x, y, z]),
                               [1] * 3)
