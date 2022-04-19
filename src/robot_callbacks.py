@@ -1,8 +1,8 @@
+import benchbot_spatial as sp
 import numpy as np
 import ros_numpy
 import rospy
 from geometry_msgs.msg import Twist
-from . import spatial as sp
 
 _DEFAULT_SPEED_FACTOR = 1
 
