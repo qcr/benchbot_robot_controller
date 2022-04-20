@@ -133,8 +133,6 @@ class PoseNoisifier(object):
                     sp.SE3_from_yaw(self._last_vel.angular.z *
                                     _noisy(self.noise_angular))),
             )
-            print(sp.rpy_from_SE3(self._accumulated_error),
-                  self._accumulated_error[0:3, 3])
 
     def update_start_pose(self, start_pose_msg):
         with self._lock:
