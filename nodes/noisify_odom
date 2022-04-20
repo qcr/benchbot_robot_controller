@@ -93,12 +93,12 @@ class PoseNoisifier(object):
                 return
 
             # Translate our clean odom into a noisy odom
-            noisy_odom = np.matmul(sp.pose_msg_to_SE3(odom_msg.pose),
-                                   self._accumulated_error)
+            noisy_odom = np.matmul(self._accumulated_error,
+                                   sp.pose_msg_to_SE3(odom_msg.pose))
 
             # Figure out "localisation" transform from map to odom frame
-            localisation = np.matmul(np.linalg.inv(self._accumulated_error),
-                                     self._start_pose)
+            localisation = np.matmul(self._start_pose,
+                                     np.linalg.inv(self._accumulated_error))
 
             # Publish our messages
             o = Odometry()
