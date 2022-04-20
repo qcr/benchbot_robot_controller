@@ -1,0 +1,155 @@
+#!/usr/bin/env python
+#
+# This node takes a ground truth pose publishing system and converts it to the
+# noisy "odom -> base_link" + "map -> odom" corrections when localisation
+# approach typical in robotics.
+#
+# We assume that "map -> odom" is not currently defined, but is instead
+# provided by the "start_pose" param. The provided "odom -> base_link" is then
+# pulled from the odometry on "in_topic_odom".
+#
+# The "map -> base_link" transform is left unchanged, but it now consists of a
+# noisy "odom -> base_link" link plus ground truth "map -> odom" localisation
+# link.
+#
+# Noise model is basic zero-mean Gaussian noise on velocity, but scaled by the
+# velocity.  This leads to desirable results like 0 velocity having no noise /
+# drift, and is tolerable within our velocity limits. May look at this making
+# something more mature in the future. Current:
+#       Linear vel noise = N(0, linear_vel * noise_linear)
+#       Angular vel noise = N(0, angular_vel * noise_angular)
+
+import benchbot_spatial as sp
+import numpy as np
+import rospy
+import threading
+import tf2_ros
+import transforms3d as t3
+from geometry_msgs.msg import (Point, Pose, Quaternion, Transform,
+                               TransformStamped, Twist, Vector3)
+from nav_msgs.msg import Odometry
+from std_msgs.msg import String
+
+
+def _noisy(std_dev):
+    return std_dev * np.random.randn()
+
+
+def _SE3_to_pose_msg(pose):
+    return Pose(
+        position=Point(*pose[0:3, 3]),
+        orientation=Quaternion(
+            *np.roll(t3.quaternions.mat2quat(pose[0:3, 0:3]), -1)),
+    )
+
+
+def _SE3_to_tf_msg(pose):
+    return Transform(
+        translation=Vector3(*pose[0:3, 3]),
+        rotation=Quaternion(*np.roll(t3.quaternions.mat2quat(pose[0:3,
+                                                                  0:3]), -1)),
+    )
+
+
+class PoseNoisifier(object):
+
+    def __init__(self):
+        self.in_topic_odom = rospy.get_param("in_topic_odom", "/odom_raw")
+        self.in_topic_start_pose = rospy.get_param("in_topic_start_pose",
+                                                   "/odom_start_pose")
+        self.in_topic_vel = rospy.get_param("in_topic_vel", "/cmd_vel")
+
+        self.out_topic_odom = rospy.get_param("out_topic_odom", "/odom")
+        self.out_frame_map = rospy.get_param("out_frame_map", "map")
+        self.out_frame_odom = rospy.get_param("out_frame_odom", "odom")
+        self.out_frame_robot = rospy.get_param("out_frame_robot", "base_link")
+
+        self.noise_angular = rospy.get_param("noise_angular", 0.1)
+        self.noise_linear = rospy.get_param("noise_linear", 0.1)
+
+        self._lock = threading.Lock()
+
+        self._start_pose = None
+
+        self._accumulated_error = np.eye(4)
+        self._last_vel = Twist()
+
+        self._tf = tf2_ros.TransformBroadcaster()
+
+        self._pub_odom = rospy.Publisher(self.out_topic_odom,
+                                         Odometry,
+                                         queue_size=1)
+        self._sub_odom = rospy.Subscriber(self.in_topic_odom, Odometry,
+                                          self.pub)
+        self._sub_start_pose = rospy.Subscriber(self.in_topic_start_pose,
+                                                String, self.update_start_pose)
+        self._sub_vel = rospy.Subscriber(self.in_topic_vel, Twist,
+                                         self.update_vel)
+
+    def pub(self, odom_msg):
+        with self._lock:
+            # Bail if we don't have valid data to work with
+            if self._start_pose is None:
+                return
+
+            # Translate our clean odom into a noisy odom
+            noisy_odom = np.matmul(self._accumulated_error,
+                                   sp.pose_msg_to_SE3(odom_msg.pose))
+
+            # Figure out "localisation" transform from map to odom frame
+            localisation = np.matmul(self._start_pose,
+                                     np.linalg.inv(self._accumulated_error))
+
+            # Publish our messages
+            o = Odometry()
+            o.header.stamp = odom_msg.header.stamp
+            o.header.frame_id = self.out_frame_odom
+            o.child_frame_id = self.out_frame_robot
+            o.pose.pose = _SE3_to_pose_msg(noisy_odom)
+            o.pose.covariance = odom_msg.pose.covariance
+            o.twist = self._last_vel
+            self._pub_odom.publish(o)
+
+            t = TransformStamped()
+            t.header.stamp = odom_msg.header.stamp
+            t.header.frame_id = self.out_frame_map
+            t.child_frame_id = self.out_frame_odom
+            t.transform = _SE3_to_tf_msg(localisation)
+            self._tf.sendTransform(t)
+
+            t = TransformStamped()
+            t.header.stamp = odom_msg.header.stamp
+            t.header.frame_id = self.out_frame_odom
+            t.child_frame_id = self.out_frame_robot
+            t.transform = _SE3_to_tf_msg(noisy_odom)
+            self._tf.sendTransform(t)
+
+            # Update accumulated noise
+            self._accumulated_error = np.matmul(
+                self._accumulated_error,
+                np.matmul(
+                    sp.SE3_from_translation(self._last_vel.linear.x *
+                                            _noisy(self.noise_linear)),
+                    sp.SE3_from_yaw(self._last_vel.angular.z *
+                                    _noisy(self.noise_angular))),
+            )
+
+    def update_start_pose(self, start_pose_msg):
+        with self._lock:
+            self._accumulated_error = np.eye(4)
+            self._start_pose = sp.wxyzXYZ_to_SE3(*np.array([
+                float(x.strip()) for x in start_pose_msg.data.replace(
+                    '[', '').replace(']', '').split(',')
+            ]))
+
+    def update_vel(self, vel_msg):
+        with self._lock:
+            self._last_vel = vel_msg
+
+
+if __name__ == '__main__':
+    rospy.init_node("noisify_odom")
+
+    pn = PoseNoisifier()
+
+    rospy.spin()

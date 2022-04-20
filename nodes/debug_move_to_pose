@@ -1,0 +1,112 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+
+import numpy as np
+import os
+import rospy
+import tf2_ros
+import types
+
+from geometry_msgs.msg import Twist
+
+import sys
+
+sys.path.append(
+    os.path.join(os.path.dirname(os.path.realpath(__file__)), '../src'))
+import robot_callbacks as rc
+
+
+def __SE2_to_SE3(pose):
+    return np.matmul(rc.__SE3_from_translation(pose[0, 2], pose[1, 2]),
+                     rc.__SE3_from_yaw(rc.__yaw_from_SE2(pose)))
+
+
+class DummyController():
+
+    class DummyEvent():
+
+        def __init__(self):
+            pass
+
+        def is_set(self):
+            return False
+
+    class DummyInstance():
+
+        def __init__(self):
+            pass
+
+        def is_collided(self):
+            return False
+
+        def is_dirty(self):
+            return False
+
+    def __init__(self):
+        self.evt = DummyController.DummyEvent()
+        self.instance = DummyController.DummyInstance()
+
+        self.config = {
+            'task': {
+                'name': 'ground_truth'
+            },
+            'robot': {
+                'global_frame': 'map',
+                'robot_frame': 'base_link'
+            }
+        }
+        self.state = {'initial_pose': 0}
+
+        self.tf_buffer = tf2_ros.Buffer()
+        self._tf_listener = tf2_ros.TransformListener(self.tf_buffer)
+
+
+if __name__ == '__main__':
+    rospy.init_node("debug_move_to_pose")
+
+    p = rospy.Publisher('/cmd_vel', Twist, queue_size=100)
+    d = DummyController()
+
+    # Wait for tf to exist (there's something really dodgy going on here...)
+    t = None
+    while not rospy.is_shutdown() and t is None:
+        try:
+            t = d.tf_buffer.lookup_transform('map', 'base_link',
+                                             rospy.Time.now(),
+                                             rospy.Duration(1.0))
+        except Exception as e:
+            pass
+
+    while not rospy.is_shutdown():
+        c = rc.__SE3_to_SE2(rc._current_pose(d))
+
+        # Get goal from terminal
+        goal_xyt = None
+        while goal_xyt is None:
+            print("Relative goal (format: x,y,th): ", end='')
+            g = raw_input().split(',')
+            if len(g) == 3:
+                goal_xyt = []
+                for x in g:
+                    try:
+                        goal_xyt.append(float(x))
+                    except:
+                        goal_xyt = None
+                        break
+        goal_rel = rc.__SE3_to_SE2(
+            np.matmul(rc.__SE3_from_translation(goal_xyt[0], goal_xyt[1]),
+                      rc.__SE3_from_yaw(goal_xyt[2])))
+        goal_abs = np.matmul(c, goal_rel)
+
+        # Print some information about the goal
+        ct = rc.__SE2_to_xyt(c)
+        grt = rc.__SE2_to_xyt(goal_rel)
+        gat = rc.__SE2_to_xyt(goal_abs)
+        print(
+            "Going from:\t(%f,%f,%f)\n\tto\t(%f,%f,%f)\n\tdelta\t(%f,%f,%f)" %
+            (ct[0], ct[1], ct[2], gat[0], gat[1], gat[2], grt[0], grt[1],
+             grt[2]))
+
+        # Try and move to the goal
+        rc._move_to_pose(__SE2_to_SE3(goal_abs), p, d)

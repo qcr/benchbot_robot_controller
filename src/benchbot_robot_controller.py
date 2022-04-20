@@ -24,7 +24,10 @@ DEFAULT_CONFIG_ROBOT = {
     'file_dirty_state': '/tmp/benchbot_dirty',
     'file_collisions': '/tmp/benchbot_collision',
     'logs_dir': '/tmp/benchbot_logs',
-    'start_cmds': [],
+    'persistent_cmds': [],
+    'persistent_status': ':',
+    'run_cmd': ':',
+    'stop_cmd': ':'
 }
 
 DEFAULT_CONFIG_ENV = {"object_labels": []}
@@ -36,8 +39,9 @@ CONN_ROS_TO_API = 'ros_to_api'
 CONN_ROSCACHE_TO_API = 'roscache_to_api'
 CONNS = [CONN_API_TO_ROS, CONN_ROS_TO_API, CONN_ROSCACHE_TO_API]
 
+TIMEOUT_PREPARE = 120
 TIMEOUT_ROS_PING = 5
-TIMEOUT_STARTUP = 9000000000000
+TIMEOUT_RUN = 90
 
 VARIABLES = {
     'ENVS_PATH':
@@ -86,10 +90,35 @@ class ControllerInstance(object):
         self._log_files = None
         self._events = events
 
+        self.prepared = False
+
     def _replace_variables(self, text):
         for k, v in VARIABLES.items():
             text = text.replace("$%s" % k, str(eval(v)))
         return text
+
+    def destroy(self):
+        if not self.prepared:
+            return True
+        self.prepared = False
+
+        # Stop all of the open processes & logging
+        for p in self._processes:
+            try:
+                # Have to do this twice because some Omniverse children simply
+                # do not respond to the first terminate signal. No idea whether
+                # this is BenchBot's issue or Omniverse's at this point.
+                os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+                os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+            except Exception as e:
+                print(e)
+                pass
+        for p in self._processes:
+            p.wait()
+        self._processes = None
+        self.stop_logging()
+
+        return True
 
     def health_check(self, check_running=True):
         # Checks the health of the currently running instance, printing errors
@@ -135,15 +164,15 @@ class ControllerInstance(object):
                 return False
             return True
 
-    def start(self):
-        if self.is_running():
-            print("\nController Instance already appears to be running. "
-                  "Please stop the existing instance before starting again.")
-            return False
+    def prepare(self):
+        if self.prepared:
+            self.destroy()
+        self.prepared = False
 
         # Get a set of commands by replacing variables with the config values
         self._cmds = [
-            self._replace_variables(c) for c in self.config_robot['start_cmds']
+            self._replace_variables(c)
+            for c in self.config_robot['persistent_cmds']
         ]
 
         # Start the set of commands, holding onto the process so we can manage
@@ -159,27 +188,57 @@ class ControllerInstance(object):
             for c, l in zip(self._cmds, self._log_files)
         ]
 
-        # Wait until we move into a running state
-        start_time = time.time()
-        while not self.is_running():
+        # Determine if we're successfully prepared
+        cmd = self._replace_variables(self.config_robot['persistent_status'])
+        start = time.time()
+        while (subprocess.Popen(cmd, shell=True,
+                                executable='/bin/bash').wait() != 0):
             if self._events and self._events.wait(0.25):
                 return False
-            if not self.health_check(check_running=False):
-                return False
-            elif (time.time() - start_time > TIMEOUT_STARTUP and
-                  not self.health_check()):
-                print("\nROBOT WAS NOT DETECTED TO BE RUNNING AFTER %ss (no "
-                      "data on ROS TOPICS). DUMPING LOGS FOR ALL COMMANDS..." %
-                      TIMEOUT_STARTUP)
+            elif (time.time() - start > TIMEOUT_PREPARE):
+                print("\nFAILED TO PREPARE INSTANCE AFTER %ss. "
+                      "STATUS CHECK COMMANDS WAS:\n\t%s\n\n"
+                      "DUMPING LOGS FOR ALL COMMANDS... " %
+                      (TIMEOUT_PREPARE, cmd))
                 for i, _ in enumerate(self._cmds):
-                    print("COMMAND:")
-                    print("\t%s" % self._cmds[i])
-                    print("OUTPUT:")
+                    print("COMMAND:\n\t%s\nOUTPUT:" % self._cmds[i])
                     with open(
-                            os.path.join(self.config_robot['logs_dir'],
-                                         str(i)), 'r') as f:
+                            os.path.join(self.config_robot['logs_dir'], str(i),
+                                         'r')) as f:
                         print(f.read())
                 return False
+            elif not self._events:
+                time.sleep(0.25)
+        self.prepared = True
+        return True
+
+    def start(self):
+        if self.is_running():
+            print("\nController Instance already appears to be running. "
+                  "Please stop the existing instance before starting again.")
+            return False
+
+        # Get the start command by replacing variables with config values
+        cmd = self._replace_variables(self.config_robot['run_cmd'])
+
+        # Attempt to execute the command, returning the result
+        p = subprocess.Popen(cmd, shell=True, executable='/bin/bash')
+        start = time.time()
+        status = p.poll()
+        while status is None:
+            if self._events and self._events.wait(0.25):
+                return False
+            elif (time.time() - start > TIMEOUT_RUN):
+                print("\nFAILED TO START INSTANCE AFTER %ss" % TIMEOUT_RUN)
+                return False
+            elif not self._events:
+                time.sleep(0.25)
+            status = p.poll()
+
+        if status > 0:
+            print("\nCOMMAND TO START INSTANCE HAD NON-ZERO RETURN CODE (%d)" %
+                  status)
+            return False
         return True
 
     def start_logging(self):
@@ -191,18 +250,22 @@ class ControllerInstance(object):
         ]
 
     def stop(self):
-        # We could be in the process of starting, so this check is inappropriate
-        # if not self.is_running():
-        #     print("Controller Instance is not running. Skipping stop.")
-        #     return False
+        if not self.is_running():
+            print("\nController isn't running, so nothing to stop.")
+            return True
 
-        # Stop all of the open processes & logging
-        for p in self._processes:
-            os.killpg(os.getpgid(p.pid), signal.SIGINT)
-        for p in self._processes:
-            p.wait()
-        self._processes = None
-        self.stop_logging()
+        # Get the stop command
+        cmd = self._replace_variables(self.config_robot['stop_cmd'])
+
+        # Attempt to execute the command
+        p = subprocess.Popen(cmd, shell=True, executable='/bin/bash')
+        status = p.poll()
+        while status is None:
+            if self._events and self._events.wait(0.25):
+                return False
+            elif not self._events:
+                time.sleep(0.25)
+            status = p.poll()
 
         # Clear all temporary files
         for f in [
@@ -213,9 +276,12 @@ class ControllerInstance(object):
                              shell=True,
                              executable='/bin/bash').wait()
 
-        # Wait until controller instance is detected as not running
-        while self.is_running():
-            time.sleep(0.25)
+        # Return the result
+        if status > 0:
+            print("\nCOMMAND TO STOP INSTANCE HAD NON-ZERO RETURN CODE (%d)" %
+                  status)
+            return False
+        return True
 
     def stop_logging(self):
         for f in self._log_files:
@@ -230,6 +296,9 @@ class RobotController(object):
         self._auto_start = auto_start
         self.config = None
         self.config_valid = False
+
+        self.prepared = False
+        self.running = False
 
         self.state = None
         self.connections = {}
@@ -342,10 +411,30 @@ class RobotController(object):
                 print("UNIMPLEMENTED POST CONNECTION: %s" %
                       connection_data['connection'])
 
-    def restart(self):
-        # Restarts the robot by returning it to the starting point
-        self.stop()
-        self.start()
+    def destroy(self):
+        if self.prepared:
+            self.instance.destroy()
+        self.wipe()
+        self.prepared = False
+        self.running = False
+        return True
+
+    def prepare(self):
+        # Start a new instance from a clean state
+        self.wipe()
+        self.instance = ControllerInstance(
+            self.config['robot'],
+            self.config['environments'][self.state['selected_environment']], [
+                c['ros']
+                for c in self.connections.values()
+                if c['type'] == CONN_ROS_TO_API and c['ros'] != None
+            ],
+            events=self.evt)
+
+        # Start the persistent preparation commands, & return the status
+        self.running = False
+        self.prepared = self.instance.prepare()
+        return self.prepared
 
     def run(self):
         # Setup all of the robot management functions
@@ -358,33 +447,56 @@ class RobotController(object):
 
         @robot_flask.route('/config/', methods=['GET'])
         def __config_full():
-            return flask.jsonify(self.config)
+            try:
+                if not self.config_valid:
+                    rospy.logerr(
+                        "Controller currently has no valid configuration.")
+                    flask.abort(404)
+                else:
+                    return flask.jsonify(self.config)
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/config/<config>', methods=['GET'])
         def __config(config):
-            if config in self.config:
-                return flask.jsonify(self.config[config])
-            else:
-                rospy.logerr("Requested non-existent config: %s" % config)
-                flask.abort(404)
+            try:
+                if not self.config_valid:
+                    rospy.logerr(
+                        "Controller currently has no valid configuration.")
+                    flask.abort(404)
+                elif config not in self.config:
+                    rospy.logerr("Requested non-existent config: %s" % config)
+                    flask.abort(404)
+                else:
+                    return flask.jsonify(self.config[config])
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/configure', methods=['POST'])
         def __configure():
             try:
                 self.set_config(flask.request.json)
-            except Exception as e:
+                return flask.jsonify(
+                    {'configuration_valid': self.config_valid})
+            except:
+                self.config_valid = False
                 print(traceback.format_exc())
-                raise (e)
-            return flask.jsonify({'configuration_valid': self.config_valid})
+                flask.abort(500)
 
         @robot_flask.route('/connections/<connection>',
                            methods=['GET', 'POST'])
         def __connection(connection):
             # Handle all connection calls (typically sent via the supervisor)
-            if connection not in self.config['robot']['connections']:
-                rospy.logerr("Requested undefined connection: %s" % connection)
-                flask.abort(404)
             try:
+                if connection not in self.config['robot']['connections']:
+                    rospy.logerr("Requested undefined connection: %s" %
+                                 connection)
+                    flask.abort(404)
+                if not self.running:
+                    rospy.logerr("Can't call connection when not running.")
+                    flask.abort(400)
                 return flask.jsonify(
                     jsonpickle.encode(
                         self._call_connection(connection,
@@ -398,66 +510,122 @@ class RobotController(object):
 
         @robot_flask.route('/is_collided', methods=['GET'])
         def __is_collided():
-            return flask.jsonify({'is_collided': self.instance.is_collided()})
+            try:
+                return flask.jsonify({
+                    'is_collided':
+                        self.instance.is_collided() if self.running else False
+                })
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/is_dirty', methods=['GET'])
         def __is_dirty():
-            return flask.jsonify({'is_dirty': self.instance.is_dirty()})
+            try:
+                return flask.jsonify({
+                    'is_dirty':
+                        self.instance.is_dirty() if self.running else False
+                })
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/is_finished', methods=['GET'])
         def __is_finished():
-            return flask.jsonify({
-                'is_finished':
-                    (False if 'trajectory_pose_next' not in self.state else
-                     self.state['trajectory_pose_next'] >= len(
-                         self.state['trajectory_poses']))
-            })
+            try:
+                return flask.jsonify({
+                    'is_finished':
+                        (False if 'trajectory_pose_next' not in self.state else
+                         self.state['trajectory_pose_next'] >= len(
+                             self.state['trajectory_poses']))
+                })
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/is_running', methods=['GET'])
         def __is_running():
             try:
-                return flask.jsonify(
-                    {'is_running': self.instance.is_running()})
-            except Exception as e:
-                rospy.logerr(e)
+                return flask.jsonify({
+                    'is_running':
+                        self.instance.is_running() if self.prepared else False
+                })
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/next', methods=['GET'])
         def __next():
             try:
-                if self._env_next() == 0:
-                    raise ValueError(
+                if not self.running:
+                    success = False
+                elif self._env_next() == 0:
+                    rospy.logerr(
                         "There is no next map; at the end of the list")
-                self.stop()
-                self.state['selected_environment'] = self._env_next()
-                self.start()
-                success = True
-            except Exception as e:
-                rospy.logerr(e)
-                success = False
-            return flask.jsonify({'next_success': success})
+                    success = False
+                else:
+                    self.stop()
+                    self.state['selected_environment'] = self._env_next()
+                    self.start()
+                    success = True
+                return flask.jsonify({'next_success': success})
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
+
+        @robot_flask.route('/prepare', methods=['GET'])
+        def __prepare():
+            try:
+                if not self.config_valid:
+                    rospy.logerr("Controller needs a valid config to prepare.")
+                    success = False
+                else:
+                    print("Preparing the requested controller ... ", end="")
+                    sys.stdout.flush()
+                    success = self.prepare()
+                    print("Done")
+                return flask.jsonify({'prepare_success': success})
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/reset', methods=['GET'])
         def __reset():
-            # Resets the robot in the current scene
+            # Resets the robot to the FIRST scene
             try:
-                self.restart()
-                success = self.instance.is_running()
-            except Exception as e:
-                rospy.logerr(e)
-                success = False
-            return flask.jsonify({'reset_success': success})
+                if not self.running:
+                    success = False
+                else:
+                    self.stop()
+                    self.wipe()
+                    success = self.start()
+                return flask.jsonify({'reset_success': success})
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/restart', methods=['GET'])
         def __restart():
-            # Restarts the robot in the FIRST scene
-            self.wipe()
-            resp = __reset()
-            resp.data = resp.data.replace('reset', 'restart')
-            return resp
+            # Restarts the robot in the CURRENT scene
+            try:
+                if not self.running:
+                    success = False
+                else:
+                    self.stop()
+                    success = self.start()
+                return flask.jsonify({'restart_success': success})
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         @robot_flask.route('/selected_environment', methods=['GET'])
         def __selected_env():
             try:
+                if not self.config_valid:
+                    rospy.logerr(
+                        "Controller needs a valid config to select an environment."
+                    )
+                    flask.abort(404)
                 return flask.jsonify({
                     'name':
                         self.config['environments']
@@ -468,41 +636,64 @@ class RobotController(object):
                     'number':
                         self.state['selected_environment']
                 })
-            except Exception as e:
-                rospy.logerr(e)
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
+
+        @robot_flask.route('/start', methods=['GET'])
+        def __start():
+            try:
+                if not self.prepared:
+                    rospy.logerr(
+                        "Controller needs to be prepared before starting; "
+                        "run /prepare.")
+                    success = False
+                else:
+                    print(
+                        "Starting the requested run in running controller ... ",
+                        end="")
+                    sys.stdout.flush()
+                    success = self.start()
+                    print("Done")
+                return flask.jsonify({'start_success': success})
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
+
+        @robot_flask.route('/stop', methods=['GET'])
+        def __stop():
+            try:
+                if not self.prepared or not self.running:
+                    success = True
+                else:
+                    self.stop()
+                    success = True
+                return flask.jsonify({'stop_success': success})
+            except:
+                print(traceback.format_exc())
+                flask.abort(500)
 
         # Configure our server
         robot_server = pywsgi.WSGIServer(
             re.split('http[s]?://', self.robot_address)[-1], robot_flask)
 
-        # Run the server & start the real robot controller
+        # Make the robot controller interface available to receive commands
         robot_server.start()
         print("\nRobot controller is now available @ '%s' ..." %
               self.robot_address)
-        print("Waiting to receive valid config data...")
-        while not self.config_valid:
-            if self.evt.wait(0.1):
-                break
 
-            if self._auto_start and self.config_valid:
-                print("Starting the requested real robot ROS stack ... ",
-                      end="")
-                sys.stdout.flush()
-                self.start()
-                print("Done")
+        # Run until we receive an exit signal
+        while not self.evt.wait(0.1):
+            pass
 
-        # Wait until we get an exit signal or crash, then shut down gracefully
-        while self.instance.health_check():
-            if self.evt.wait(0.1):
-                break
+        # Exit cleanly
         print("\nShutting down the real robot ROS stack & exiting ...")
         robot_server.stop()
-        self.stop()
+        self.destroy()
         print("Stopped")
 
     def set_config(self, config):
-        # Stop any running instances (we are bailing on any notion of dynamic
-        # reconfiguration...)
+        # Stop any running instances
         self.stop()
 
         # Copy in the merged dicts
@@ -536,22 +727,16 @@ class RobotController(object):
         self.config_valid = True
 
     def start(self):
-        self.state = {
-            k: v for k, v in self.state.items() if k in DEFAULT_STATE
-        }
-        self.instance = ControllerInstance(
-            self.config['robot'],
-            self.config['environments'][self.state['selected_environment']], [
-                c['ros']
-                for c in self.connections.values()
-                if c['type'] == CONN_ROS_TO_API and c['ros'] != None
-            ],
-            events=self.evt)
-        self.instance.start()
+        if self.prepared:
+            self.running = self.instance.start()
+            return self.running
+        else:
+            return False
 
     def stop(self):
-        if self.instance is not None:
+        if self.prepared:
             self.instance.stop()
+        return True
 
     def wipe(self):
         self.state = copy.deepcopy(DEFAULT_STATE)
