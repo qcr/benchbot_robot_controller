@@ -712,6 +712,7 @@ class RobotController(object):
                     self.config[k][i].update(config[k][i])
 
         # Register all of the required connections
+        self.connections = {}
         for k, v in self.config['robot']['connections'].items():
             if 'connection' in v and v['connection'] in CONNS:
                 self._register_connection(k, v)
