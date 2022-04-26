@@ -156,7 +156,8 @@ def _move_to_pose(goal, publisher, controller):
         if (rho > _MOVE_TOL_DIST):
             publisher.publish(vel_msg)
             hz_rate.sleep()
-    _move_to_angle(goal, publisher, controller)
+    if (time() - t < _MOVE_TIMEOUT):
+        _move_to_angle(goal, publisher, controller)
     publisher.publish(Twist())
 
 
