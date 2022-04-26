@@ -3,6 +3,7 @@ import numpy as np
 import ros_numpy
 import rospy
 from geometry_msgs.msg import Twist
+from time import time
 
 _DEFAULT_SPEED_FACTOR = 1
 
@@ -13,12 +14,15 @@ _MOVE_TOL_YAW = np.deg2rad(1)
 
 _MOVE_ANGLE_K = 3
 
+_MOVE_TIMEOUT = 30
+
 _MOVE_POSE_K_RHO = 1
 _MOVE_POSE_K_ALPHA = 4
 _MOVE_POSE_K_BETA = -1.5
 
 _MOVE_LINEAR_LIMITS = [-0.6, 2.0]
 _MOVE_ANGULAR_LIMIT = 0.5
+
 
 
 def __safe_dict_get(d, key, default):
@@ -79,7 +83,8 @@ def _move_to_angle(goal, publisher, controller):
     gamma = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while (not controller.evt.is_set() and
+    t = time()
+    while (time() - t < _MOVE_TIMEOUT and not controller.evt.is_set() and
            not controller.instance.is_collided() and
            (gamma is None or np.abs(gamma) > _MOVE_TOL_YAW)):
         # Get latest orientation error
@@ -108,7 +113,8 @@ def _move_to_pose(goal, publisher, controller):
     rho = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while (not controller.evt.is_set() and
+    t = time()
+    while (time() -t < _MOVE_TIMEOUT and not controller.evt.is_set() and
            not controller.instance.is_collided() and
            (rho is None or rho > _MOVE_TOL_DIST)):
         # Get latest position error
