@@ -146,14 +146,18 @@ def _move_to_pose(goal, publisher, controller):
         vel_msg.linear.x = _move_speed_factor(controller) * vel_msg.linear.x
         vel_msg.angular.z = _move_speed_factor(controller) * vel_msg.angular.z
 
-        vel_msg.linear.x = (
-            _MOVE_LINEAR_LIMITS[1] if vel_msg.linear.x > _MOVE_LINEAR_LIMITS[1]
-            else _MOVE_LINEAR_LIMITS[0]
-            if vel_msg.linear.x < _MOVE_LINEAR_LIMITS[0] else vel_msg.linear.x)
-        vel_msg.angular.z = (
-            _MOVE_ANGULAR_LIMIT if vel_msg.angular.z > _MOVE_ANGULAR_LIMIT else
-            -_MOVE_ANGULAR_LIMIT
-            if vel_msg.angular.z < -_MOVE_ANGULAR_LIMIT else vel_msg.angular.z)
+        clamped_l = min(_MOVE_LINEAR_LIMITS[1],
+                        max(_MOVE_LINEAR_LIMITS[0], vel_msg.linear.x))
+        clamped_a = min(_MOVE_ANGULAR_LIMIT,
+                        max(-_MOVE_ANGULAR_LIMIT, vel_msg.angular.z))
+        factor = max(abs(vel_msg.linear.x / clamped_l),
+                     abs(vel_msg.angular.z / clamped_a))
+        # print(
+        #     "r,a,p: (%f,%f,%f) B:%d l,a: (%f, %f) lc,ac: (%f, %f)" %
+        #     (rho, alpha, beta, backwards, vel_msg.linear.x, vel_msg.angular.z,
+        #      vel_msg.linear.x / factor, vel_msg.angular.z / factor))
+        vel_msg.linear.x = vel_msg.linear.x / factor
+        vel_msg.angular.z = vel_msg.angular.z / factor
 
         # Publish velocity (don't move if we're already there!)
         if (rho > _MOVE_TOL_DIST):
