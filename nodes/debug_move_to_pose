@@ -2,6 +2,7 @@
 
 from __future__ import print_function
 
+import benchbot_spatial as sp
 import numpy as np
 import os
 import rospy
@@ -15,11 +16,6 @@ import sys
 sys.path.append(
     os.path.join(os.path.dirname(os.path.realpath(__file__)), '../src'))
 import robot_callbacks as rc
-
-
-def __SE2_to_SE3(pose):
-    return np.matmul(rc.__SE3_from_translation(pose[0, 2], pose[1, 2]),
-                     rc.__SE3_from_yaw(rc.__yaw_from_SE2(pose)))
 
 
 class DummyController():
@@ -70,16 +66,19 @@ if __name__ == '__main__':
 
     # Wait for tf to exist (there's something really dodgy going on here...)
     t = None
+    print("Waiting for tf...")
     while not rospy.is_shutdown() and t is None:
         try:
             t = d.tf_buffer.lookup_transform('map', 'base_link',
                                              rospy.Time.now(),
                                              rospy.Duration(1.0))
         except Exception as e:
+            print("ERROR: %s" % e)
             pass
+    print("Got initial tf.")
 
     while not rospy.is_shutdown():
-        c = rc.__SE3_to_SE2(rc._current_pose(d))
+        c = sp.SE3_to_SE2(rc._current_pose(d))
 
         # Get goal from terminal
         goal_xyt = None
@@ -94,19 +93,19 @@ if __name__ == '__main__':
                     except:
                         goal_xyt = None
                         break
-        goal_rel = rc.__SE3_to_SE2(
-            np.matmul(rc.__SE3_from_translation(goal_xyt[0], goal_xyt[1]),
-                      rc.__SE3_from_yaw(goal_xyt[2])))
+        goal_rel = sp.SE3_to_SE2(
+            np.matmul(sp.SE3_from_translation(goal_xyt[0], goal_xyt[1]),
+                      sp.SE3_from_yaw(goal_xyt[2])))
         goal_abs = np.matmul(c, goal_rel)
 
         # Print some information about the goal
-        ct = rc.__SE2_to_xyt(c)
-        grt = rc.__SE2_to_xyt(goal_rel)
-        gat = rc.__SE2_to_xyt(goal_abs)
+        ct = sp.SE2_to_xyt(c)
+        grt = sp.SE2_to_xyt(goal_rel)
+        gat = sp.SE2_to_xyt(goal_abs)
         print(
             "Going from:\t(%f,%f,%f)\n\tto\t(%f,%f,%f)\n\tdelta\t(%f,%f,%f)" %
             (ct[0], ct[1], ct[2], gat[0], gat[1], gat[2], grt[0], grt[1],
              grt[2]))
 
         # Try and move to the goal
-        rc._move_to_pose(__SE2_to_SE3(goal_abs), p, d)
+        rc._move_to_pose(sp.SE2_to_SE3(goal_abs), p, d)
