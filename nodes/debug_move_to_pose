@@ -84,7 +84,10 @@ if __name__ == '__main__':
         goal_xyt = None
         while goal_xyt is None:
             print("Relative goal (format: x,y,th): ", end='')
-            g = raw_input().split(',')
+            r = raw_input()
+            if len(r) == 0:
+                sys.exit(0)
+            g = r.split(',')
             if len(g) == 3:
                 goal_xyt = []
                 for x in g:
