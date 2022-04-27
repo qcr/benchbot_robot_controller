@@ -111,10 +111,11 @@ def _move_to_pose(goal, publisher, controller):
     g = sp.SE3_to_SE2(goal)
 
     rho = None
+    backwards = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
     t = time()
-    while (time() -t < _MOVE_TIMEOUT and not controller.evt.is_set() and
+    while (time() - t < _MOVE_TIMEOUT and not controller.evt.is_set() and
            not controller.instance.is_collided() and
            (rho is None or rho > _MOVE_TOL_DIST)):
         # Get latest position error
@@ -124,11 +125,13 @@ def _move_to_pose(goal, publisher, controller):
         # Calculate values used in the controller
         rho = np.linalg.norm(error[0:2, 2])
         alpha = np.arctan2(error[1, 2], error[0, 2])
-        beta = sp.pi_wrap(-sp.yaw_from_SE2(current) - alpha + sp.yaw_from_SE2(g))
+        beta = sp.pi_wrap(-sp.yaw_from_SE2(current) - alpha +
+                          sp.yaw_from_SE2(g))
 
         # Construct velocity message
-        backwards = (rho > _MOVE_TOL_DIST and
-                     np.abs(np.arctan2(error[1, 2], error[0, 2])) > np.pi / 2)
+        if backwards is None:
+            backwards = (np.abs(np.arctan2(error[1, 2], error[0, 2])) >
+                         1.05 * np.pi / 2)
         if backwards:
             vel_msg.linear.x = -1 * _MOVE_POSE_K_RHO * rho
             vel_msg.angular.z = (
@@ -247,10 +250,10 @@ def move_angle(data, publisher, controller):
 def move_distance(data, publisher, controller):
     # Derive a corresponding goal pose & send the robot there
     _move_to_pose(
-        np.matmul(_current_pose(controller),
-                  sp.SE3_from_translation(__safe_dict_get(data, 'distance',
-                                                         0))), publisher,
-        controller)
+        np.matmul(
+            _current_pose(controller),
+            sp.SE3_from_translation(__safe_dict_get(data, 'distance', 0))),
+        publisher, controller)
 
 
 def move_next(data, publisher, controller):
