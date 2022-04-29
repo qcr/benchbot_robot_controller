@@ -3,6 +3,7 @@ import numpy as np
 import ros_numpy
 import rospy
 from geometry_msgs.msg import Twist
+from time import time
 
 _DEFAULT_SPEED_FACTOR = 1
 
@@ -13,12 +14,14 @@ _MOVE_TOL_YAW = np.deg2rad(1)
 
 _MOVE_ANGLE_K = 3
 
-_MOVE_POSE_K_RHO = 1
-_MOVE_POSE_K_ALPHA = 4
-_MOVE_POSE_K_BETA = -1.5
+_MOVE_TIMEOUT = 30
 
-_MOVE_LINEAR_LIMITS = [-0.6, 2.0]
-_MOVE_ANGULAR_LIMIT = 0.5
+_MOVE_POSE_K_RHO = 2
+_MOVE_POSE_K_ALPHA = 10
+_MOVE_POSE_K_BETA = -4
+
+_MOVE_LINEAR_LIMITS = [-0.6, 1.5]
+_MOVE_ANGULAR_LIMIT = 1.0
 
 
 def __safe_dict_get(d, key, default):
@@ -79,7 +82,8 @@ def _move_to_angle(goal, publisher, controller):
     gamma = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while (not controller.evt.is_set() and
+    t = time()
+    while (time() - t < _MOVE_TIMEOUT and not controller.evt.is_set() and
            not controller.instance.is_collided() and
            (gamma is None or np.abs(gamma) > _MOVE_TOL_YAW)):
         # Get latest orientation error
@@ -106,9 +110,11 @@ def _move_to_pose(goal, publisher, controller):
     g = sp.SE3_to_SE2(goal)
 
     rho = None
+    backwards = None
     vel_msg = Twist()
     hz_rate = rospy.Rate(_MOVE_HZ)
-    while (not controller.evt.is_set() and
+    t = time()
+    while (time() - t < _MOVE_TIMEOUT and not controller.evt.is_set() and
            not controller.instance.is_collided() and
            (rho is None or rho > _MOVE_TOL_DIST)):
         # Get latest position error
@@ -118,11 +124,13 @@ def _move_to_pose(goal, publisher, controller):
         # Calculate values used in the controller
         rho = np.linalg.norm(error[0:2, 2])
         alpha = np.arctan2(error[1, 2], error[0, 2])
-        beta = sp.pi_wrap(-sp.yaw_from_SE2(current) - alpha + sp.yaw_from_SE2(g))
+        beta = sp.pi_wrap(-sp.yaw_from_SE2(current) - alpha +
+                          sp.yaw_from_SE2(g))
 
         # Construct velocity message
-        backwards = (rho > _MOVE_TOL_DIST and
-                     np.abs(np.arctan2(error[1, 2], error[0, 2])) > np.pi / 2)
+        if backwards is None:
+            backwards = (np.abs(np.arctan2(error[1, 2], error[0, 2])) >
+                         1.05 * np.pi / 2)
         if backwards:
             vel_msg.linear.x = -1 * _MOVE_POSE_K_RHO * rho
             vel_msg.angular.z = (
@@ -137,20 +145,25 @@ def _move_to_pose(goal, publisher, controller):
         vel_msg.linear.x = _move_speed_factor(controller) * vel_msg.linear.x
         vel_msg.angular.z = _move_speed_factor(controller) * vel_msg.angular.z
 
-        vel_msg.linear.x = (
-            _MOVE_LINEAR_LIMITS[1] if vel_msg.linear.x > _MOVE_LINEAR_LIMITS[1]
-            else _MOVE_LINEAR_LIMITS[0]
-            if vel_msg.linear.x < _MOVE_LINEAR_LIMITS[0] else vel_msg.linear.x)
-        vel_msg.angular.z = (
-            _MOVE_ANGULAR_LIMIT if vel_msg.angular.z > _MOVE_ANGULAR_LIMIT else
-            -_MOVE_ANGULAR_LIMIT
-            if vel_msg.angular.z < -_MOVE_ANGULAR_LIMIT else vel_msg.angular.z)
+        clamped_l = min(_MOVE_LINEAR_LIMITS[1],
+                        max(_MOVE_LINEAR_LIMITS[0], vel_msg.linear.x))
+        clamped_a = min(_MOVE_ANGULAR_LIMIT,
+                        max(-_MOVE_ANGULAR_LIMIT, vel_msg.angular.z))
+        factor = max(abs(vel_msg.linear.x / clamped_l),
+                     abs(vel_msg.angular.z / clamped_a))
+        # print(
+        #     "r,a,p: (%f,%f,%f) B:%d l,a: (%f, %f) lc,ac: (%f, %f)" %
+        #     (rho, alpha, beta, backwards, vel_msg.linear.x, vel_msg.angular.z,
+        #      vel_msg.linear.x / factor, vel_msg.angular.z / factor))
+        vel_msg.linear.x = vel_msg.linear.x / factor
+        vel_msg.angular.z = vel_msg.angular.z / factor
 
         # Publish velocity (don't move if we're already there!)
         if (rho > _MOVE_TOL_DIST):
             publisher.publish(vel_msg)
             hz_rate.sleep()
-    _move_to_angle(goal, publisher, controller)
+    if (time() - t < _MOVE_TIMEOUT):
+        _move_to_angle(goal, publisher, controller)
     publisher.publish(Twist())
 
 
@@ -240,10 +253,10 @@ def move_angle(data, publisher, controller):
 def move_distance(data, publisher, controller):
     # Derive a corresponding goal pose & send the robot there
     _move_to_pose(
-        np.matmul(_current_pose(controller),
-                  sp.SE3_from_translation(__safe_dict_get(data, 'distance',
-                                                         0))), publisher,
-        controller)
+        np.matmul(
+            _current_pose(controller),
+            sp.SE3_from_translation(__safe_dict_get(data, 'distance', 0))),
+        publisher, controller)
 
 
 def move_next(data, publisher, controller):

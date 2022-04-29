@@ -29,6 +29,11 @@ def rpy_from_SE3(pose):
     return t3.euler.mat2euler(pose[0:3, 0:3])
 
 
+def SE2_to_SE3(pose):
+    return np.matmul(SE3_from_translation(pose[0, 2], pose[1, 2]),
+                     SE3_from_yaw(yaw_from_SE2(pose)))
+
+
 def SE2_to_xyt(pose):
     return np.array([pose[0, 2], pose[1, 2], yaw_from_SE2(pose)])
 

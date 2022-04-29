@@ -107,7 +107,7 @@ class PoseNoisifier(object):
             o.child_frame_id = self.out_frame_robot
             o.pose.pose = _SE3_to_pose_msg(noisy_odom)
             o.pose.covariance = odom_msg.pose.covariance
-            o.twist = self._last_vel
+            o.twist.twist = self._last_vel
             self._pub_odom.publish(o)
 
             t = TransformStamped()
