@@ -165,7 +165,7 @@ def _move_to_pose(goal, publisher, controller):
     if (time() - t < _MOVE_TIMEOUT):
         _move_to_angle(goal, publisher, controller)
     publisher.publish(Twist())
-    sleep(0.25)
+    sleep(0.65)
 
 
 def create_pose_list(data, controller):
