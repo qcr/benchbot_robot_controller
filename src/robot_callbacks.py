@@ -3,7 +3,7 @@ import numpy as np
 import ros_numpy
 import rospy
 from geometry_msgs.msg import Twist
-from time import time
+from time import time, sleep
 
 _DEFAULT_SPEED_FACTOR = 1
 
@@ -165,6 +165,7 @@ def _move_to_pose(goal, publisher, controller):
     if (time() - t < _MOVE_TIMEOUT):
         _move_to_angle(goal, publisher, controller)
     publisher.publish(Twist())
+    sleep(0.65)
 
 
 def create_pose_list(data, controller):
@@ -189,7 +190,7 @@ def create_pose_list(data, controller):
 
     # TODO REMOVE HACK FOR FIXING CAMERA NAME!!!
     return {
-        'camera' if 'left_camera' in k else k: {
+        'camera' if 'camera_left' in k else k: {
             'parent_frame': controller.config['robot']['global_frame'],
             'translation_xyz': v[0:3, 3],
             'rotation_rpy': sp.rpy_from_SE3(v),
