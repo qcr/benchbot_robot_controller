@@ -190,7 +190,7 @@ def create_pose_list(data, controller):
 
     # TODO REMOVE HACK FOR FIXING CAMERA NAME!!!
     return {
-        'camera' if 'left_camera' in k else k: {
+        'camera' if 'camera_left' in k else k: {
             'parent_frame': controller.config['robot']['global_frame'],
             'translation_xyz': v[0:3, 3],
             'rotation_rpy': sp.rpy_from_SE3(v),
