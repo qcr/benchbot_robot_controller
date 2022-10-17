@@ -203,8 +203,8 @@ class ControllerInstance(object):
                 for i, _ in enumerate(self._cmds):
                     print("COMMAND:\n\t%s\nOUTPUT:" % self._cmds[i])
                     with open(
-                            os.path.join(self.config_robot['logs_dir'], str(i),
-                                         'r')) as f:
+                            os.path.join(self.config_robot['logs_dir'], str(i)),
+                                         'r') as f:
                         print(f.read())
                 return False
             elif not self._events:

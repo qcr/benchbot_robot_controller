@@ -6,4 +6,4 @@ numpy
 pyyaml
 requests
 scipy
-transforms3d
+transforms3d==0.3.1
