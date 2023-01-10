@@ -36,20 +36,30 @@ def _define_initial_pose(controller):
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'],
                 controller.config['robot']['robot_frame'], rospy.Time()))
+        print("INITIALISED POSE: ")
+        print(controller.state['initial_pose'])
 
 
 def _get_noisy_pose(controller, child_frame):
+    print("GETTING NOISY POSE FOR " + child_frame)
     # Assumes initial pose of the robot has already been set
     # Get the initial pose of the robot within the world
     world_t_init_pose = controller.state['initial_pose']
+    print("WORLD T INITIAL POSE: ")
+    print(world_t_init_pose)
 
     # Get the pose of child_frame w.r.t odom
     # TODO check if we should change odom from fixed name to definable
     odom_t_child = sp.tf_msg_to_SE3(
         controller.tf_buffer.lookup_transform('odom', child_frame,
                                               rospy.Time()))
+    print("ODOM T CHILD:")
+    print(odom_t_child)
+
     # Noisy child should be init pose + odom_t_child
-    return world_t_init_pose * odom_t_child
+    print("NOISY CHILD: ")
+    print(np.matmul(world_t_init_pose, odom_t_child))
+    return np.matmul(world_t_init_pose, odom_t_child)
 
 
 def _current_pose(controller):
