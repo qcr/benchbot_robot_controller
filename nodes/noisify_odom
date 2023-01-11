@@ -32,7 +32,7 @@ from std_msgs.msg import String
 
 
 def _noisy(std_dev):
-    return std_dev * np.random.randn()
+    return np.random.normal(0, std_dev)
 
 
 def _SE3_to_pose_msg(pose):
@@ -72,7 +72,7 @@ class PoseNoisifier(object):
         self._start_pose = None
         self._last_time = None
 
-        self._accumulated_error = np.eye(4)
+        self._nodom = np.eye(4)
         self._last_vel = Twist()
 
         self._tf = tf2_ros.TransformBroadcaster()
@@ -94,20 +94,37 @@ class PoseNoisifier(object):
             if self._start_pose is None:
                 return
 
-            # Translate our clean odom into a noisy odom
-            noisy_odom = np.matmul(self._accumulated_error,
-                                   sp.pose_msg_to_SE3(odom_msg.pose))
+            # Calculate current noisy pose from starting point (noisy odom pose)
+            # Current velocity with some level of error transformed into an expected pose
+            # Between last and current odom reading
+            lin_vel_noisy = self._last_vel.linear.x + \
+                            self._last_vel.linear.x * _noisy(self.noise_linear)
+            ang_vel_noisy = self._last_vel.angular.z + \
+                            self._last_vel.angular.z * _noisy(self.noise_angular)
+            lin_move = lin_vel_noisy * (current_time - self._last_time)
+            ang_move = ang_vel_noisy * (current_time - self._last_time)
+            self._nodom = np.matmul(
+                self._nodom,
+                np.matmul(
+                    sp.SE3_from_translation(lin_move),
+                    sp.SE3_from_yaw(ang_move)),
+            )
 
-            # Figure out "localisation" transform from map to odom frame
+            # Calculate the error between what we read here and the true odometry
+            odom_error = np.matmul(self._nodom, 
+                                   np.linalg.inv(sp.pose_msg_to_SE3(odom_msg.pose)))
+            
+            # Calculate localisation transform from map to odom frame to accomodate for 
+            # calculated error
             localisation = np.matmul(self._start_pose,
-                                     np.linalg.inv(self._accumulated_error))
+                                     np.linalg.inv(odom_error))
 
             # Publish our messages
             o = Odometry()
             o.header.stamp = odom_msg.header.stamp
             o.header.frame_id = self.out_frame_odom
             o.child_frame_id = self.out_frame_robot
-            o.pose.pose = _SE3_to_pose_msg(noisy_odom)
+            o.pose.pose = _SE3_to_pose_msg(self._nodom)
             o.pose.covariance = odom_msg.pose.covariance
             o.twist.twist = self._last_vel
             self._pub_odom.publish(o)
@@ -123,25 +140,17 @@ class PoseNoisifier(object):
             t.header.stamp = odom_msg.header.stamp
             t.header.frame_id = self.out_frame_odom
             t.child_frame_id = self.out_frame_robot
-            t.transform = _SE3_to_tf_msg(noisy_odom)
+            t.transform = _SE3_to_tf_msg(self._nodom)
             self._tf.sendTransform(t)
 
-            # Update accumulated noise
-            lin_vel_noisy = self._last_vel.linear.x * _noisy(self.noise_linear)
-            ang_vel_noisy = self._last_vel.angular.z * _noisy(self.noise_angular)
-            lin_error = lin_vel_noisy * (current_time - self._last_time)
-            ang_error = ang_vel_noisy * (current_time - self._last_time)
-            self._accumulated_error = np.matmul(
-                self._accumulated_error,
-                np.matmul(
-                    sp.SE3_from_translation(lin_error),
-                    sp.SE3_from_yaw(ang_error)),
-            )
+            # Update time
             self._last_time = current_time
+
+            
 
     def update_start_pose(self, start_pose_msg):
         with self._lock:
-            self._accumulated_error = np.eye(4)
+            self._nodom = np.eye(4)
             self._last_time = rospy.get_time()
             self._start_pose = sp.wxyzXYZ_to_SE3(*np.array([
                 float(x.strip()) for x in start_pose_msg.data.replace(
