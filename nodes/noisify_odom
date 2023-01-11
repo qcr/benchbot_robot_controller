@@ -70,6 +70,7 @@ class PoseNoisifier(object):
         self._lock = threading.Lock()
 
         self._start_pose = None
+        self._last_time = None
 
         self._accumulated_error = np.eye(4)
         self._last_vel = Twist()
@@ -88,6 +89,7 @@ class PoseNoisifier(object):
 
     def pub(self, odom_msg):
         with self._lock:
+            current_time = rospy.get_time()
             # Bail if we don't have valid data to work with
             if self._start_pose is None:
                 return
@@ -125,18 +127,22 @@ class PoseNoisifier(object):
             self._tf.sendTransform(t)
 
             # Update accumulated noise
+            lin_vel_noisy = self._last_vel.linear.x * _noisy(self.noise_linear)
+            ang_vel_noisy = self._last_vel.angular.z * _noisy(self.noise_angular)
+            lin_error = lin_vel_noisy * (current_time - self._last_time)
+            ang_error = ang_vel_noisy * (current_time - self._last_time)
             self._accumulated_error = np.matmul(
                 self._accumulated_error,
                 np.matmul(
-                    sp.SE3_from_translation(self._last_vel.linear.x *
-                                            _noisy(self.noise_linear)),
-                    sp.SE3_from_yaw(self._last_vel.angular.z *
-                                    _noisy(self.noise_angular))),
+                    sp.SE3_from_translation(lin_error),
+                    sp.SE3_from_yaw(ang_error)),
             )
+            self._last_time = current_time
 
     def update_start_pose(self, start_pose_msg):
         with self._lock:
             self._accumulated_error = np.eye(4)
+            self._last_time = rospy.get_time()
             self._start_pose = sp.wxyzXYZ_to_SE3(*np.array([
                 float(x.strip()) for x in start_pose_msg.data.replace(
                     '[', '').replace(']', '').split(',')
