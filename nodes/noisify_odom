@@ -73,6 +73,7 @@ class PoseNoisifier(object):
         self._last_time = None
 
         self._nodom = np.eye(4)
+        self._initialised = False
         self._last_vel = Twist()
 
         self._tf = tf2_ros.TransformBroadcaster()
@@ -89,35 +90,58 @@ class PoseNoisifier(object):
 
     def pub(self, odom_msg):
         with self._lock:
+            # rospy.loginfo("PUBLISHING ODOM INFO")
+
             current_time = rospy.get_time()
             # Bail if we don't have valid data to work with
             if self._start_pose is None:
                 return
 
+            if not self._initialised:
+                self._nodom = sp.pose_msg_to_SE3(odom_msg.pose)
+                self._initialised = True
+
             # Calculate current noisy pose from starting point (noisy odom pose)
             # Current velocity with some level of error transformed into an expected pose
             # Between last and current odom reading
+            # rospy.loginfo("last vel linear x: "+str(self._last_vel.linear.x))
+            # rospy.loginfo("last vel angular z: "+str(self._last_vel.angular.z))
+
             lin_vel_noisy = self._last_vel.linear.x + \
                             self._last_vel.linear.x * _noisy(self.noise_linear)
             ang_vel_noisy = self._last_vel.angular.z + \
                             self._last_vel.angular.z * _noisy(self.noise_angular)
+            
+            # rospy.loginfo("lin vel noisy: " + str(lin_vel_noisy))
+            # rospy.loginfo("ang vel noisy: " + str(ang_vel_noisy))
+            # rospy.loginfo("Time diff: " + str(current_time - self._last_time))
             lin_move = lin_vel_noisy * (current_time - self._last_time)
             ang_move = ang_vel_noisy * (current_time - self._last_time)
+            # rospy.loginfo("lin move noisy: " + str(lin_move))
+            # rospy.loginfo("ang move noisy: " + str(ang_move))
             self._nodom = np.matmul(
                 self._nodom,
                 np.matmul(
                     sp.SE3_from_translation(lin_move),
                     sp.SE3_from_yaw(ang_move)),
             )
+            rospy.loginfo("estimated pose xyz")
+            rospy.loginfo(self._nodom[:-1,-1])
+
+            rospy.loginfo("given pose xyz")
+            rospy.loginfo(sp.pose_msg_to_SE3(odom_msg.pose)[:-1,-1])
 
             # Calculate the error between what we read here and the true odometry
-            odom_error = np.matmul(self._nodom, 
-                                   np.linalg.inv(sp.pose_msg_to_SE3(odom_msg.pose)))
+            odom_error = np.matmul(sp.pose_msg_to_SE3(odom_msg.pose), 
+                                   np.linalg.inv(self._nodom))
+            
+            rospy.loginfo("pose error xyz")
+            rospy.loginfo(odom_error[:-1,-1])
             
             # Calculate localisation transform from map to odom frame to accomodate for 
             # calculated error
             localisation = np.matmul(self._start_pose,
-                                     np.linalg.inv(odom_error))
+                                     odom_error)
 
             # Publish our messages
             o = Odometry()
@@ -150,7 +174,7 @@ class PoseNoisifier(object):
 
     def update_start_pose(self, start_pose_msg):
         with self._lock:
-            self._nodom = np.eye(4)
+            self._initialised = False
             self._last_time = rospy.get_time()
             self._start_pose = sp.wxyzXYZ_to_SE3(*np.array([
                 float(x.strip()) for x in start_pose_msg.data.replace(
