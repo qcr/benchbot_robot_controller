@@ -93,7 +93,6 @@ class PoseNoisifier(object):
 
     def pub(self, odom_msg):
         with self._lock:
-            # rospy.loginfo("PUBLISHING ODOM INFO")
 
             current_time = rospy.get_time()
             time_diff = current_time - self._last_time
@@ -101,6 +100,7 @@ class PoseNoisifier(object):
             if self._start_pose is None:
                 return
 
+            # Initialise that which needs initialisation
             if not self._initialised:
                 self._nodom = sp.pose_msg_to_SE3(odom_msg.pose)
                 self._last_odom = sp.pose_msg_to_SE3(odom_msg.pose)
@@ -108,28 +108,29 @@ class PoseNoisifier(object):
             
             # Calculate the velocity of the last segment of time using odometery.
             # Note, previous version used command velocity but this differed too much
-            # from true velocity
+            # from "true" velocity
+            # TODO enhancement would be to use actual wheel rotations and translate that into
+            # an estimate of velocity but that is too much for now. Current version thinks
+            # it is stationary even if the wheels keep spinning as the robot hits a wall
             current_odom = sp.pose_msg_to_SE3(odom_msg.pose)
             odom_diff = np.matmul(np.linalg.inv(self._last_odom), current_odom)
             vel_angular = sp.rpy_from_SE3(odom_diff)[2]/time_diff  # angular.z
             vel_linear = odom_diff[0,3]/time_diff # linear.x
-
-            print("Calculated vel_linear: " + str(vel_linear))
-            print("Calculated vel_angular: " + str(vel_angular))
             
-
             # Calculate current noisy pose from starting point (noisy odom pose)
             # Current velocity with some level of error transformed into an expected pose
             # Between last and current odom reading
+            # NOTE error is now usually positive multiplier to better simulate wheel encoder
+            # errors (always think you have travelled further than you have)
             lin_vel_noisy = vel_linear + \
                             vel_linear * _noisy(self.noise_linear)
             ang_vel_noisy = vel_angular + \
                             vel_angular * _noisy(self.noise_angular)
             
+            # Turn velocities back into distances
             lin_move = lin_vel_noisy * time_diff
             ang_move = ang_vel_noisy * time_diff
-            # rospy.loginfo("lin move noisy: " + str(lin_move))
-            # rospy.loginfo("ang move noisy: " + str(ang_move))
+            
             self._nodom = np.matmul(
                 self._nodom,
                 np.matmul(
@@ -153,7 +154,8 @@ class PoseNoisifier(object):
             o.child_frame_id = self.out_frame_robot
             o.pose.pose = _SE3_to_pose_msg(self._nodom)
             o.pose.covariance = odom_msg.pose.covariance
-            # TODO establish whether this twist should be the cmd vel twist or calculated true velocity
+            # TODO establish whether this twist should be the cmd vel twist 
+            # or calculated "true" velocity
             o.twist.twist = self._last_vel
             self._pub_odom.publish(o)
 
