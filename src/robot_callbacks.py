@@ -48,8 +48,9 @@ def _get_noisy_pose(controller, child_frame):
     odom_t_child = sp.tf_msg_to_SE3(
         controller.tf_buffer.lookup_transform('odom', child_frame,
                                               rospy.Time()))
+
     # Noisy child should be init pose + odom_t_child
-    return world_t_init_pose * odom_t_child
+    return np.matmul(world_t_init_pose, odom_t_child)
 
 
 def _current_pose(controller):
@@ -120,7 +121,6 @@ def _move_to_pose(goal, publisher, controller):
         # Get latest position error
         current = sp.SE3_to_SE2(_current_pose(controller))
         error = np.matmul(np.linalg.inv(current), g)
-
         # Calculate values used in the controller
         rho = np.linalg.norm(error[0:2, 2])
         alpha = np.arctan2(error[1, 2], error[0, 2])
