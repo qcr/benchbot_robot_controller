@@ -36,6 +36,7 @@ def _define_initial_pose(controller):
             controller.tf_buffer.lookup_transform(
                 controller.config['robot']['global_frame'],
                 controller.config['robot']['robot_frame'], rospy.Time()))
+        print("INITIAL POSE Robot Callbacks: " +str(controller.state['initial_pose']))
 
 
 def _get_noisy_pose(controller, child_frame):
@@ -188,7 +189,7 @@ def create_pose_list(data, controller):
     if 'initial_pose' in controller.config['robot']['poses']:
         tfs['initial_pose'] = controller.state['initial_pose']
 
-    # TODO REMOVE HACK FOR FIXING CAMERA NAME!!!
+    # x REMOVE HACK FOR FIXING CAMERA NAME!!!
     return {
         'camera' if 'camera_left' in k else k: {
             'parent_frame': controller.config['robot']['global_frame'],

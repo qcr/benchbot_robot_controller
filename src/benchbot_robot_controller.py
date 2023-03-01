@@ -57,7 +57,8 @@ VARIABLES = {
     'START_POSE':
         "self.config_env['start_pose']",
     'OBJECT_LABELS':
-        'str(json.dumps([{"name": lbl.encode("ascii")} for lbl in self.config_env["object_labels"]]))'
+        # 'str(json.dumps([{"name": lbl.encode("ascii")} for lbl in self.config_env["object_labels"]]))'
+        'str(json.dumps([{"name": lbl} for lbl in self.config_env["object_labels"]]))'
 }
 
 _CMD_DELETE_FILE = 'rm -f $FILENAME'
@@ -93,8 +94,16 @@ class ControllerInstance(object):
         self.prepared = False
 
     def _replace_variables(self, text):
+        # print("TEXT: ", text)
+        # print("SOMETHING: ", self.config_env["object_labels"])
+        # print("SOMETHING ELSE: ", [{"name": lbl.encode("ascii")} for lbl in self.config_env["object_labels"]])
+        # print("SOMETHING MORE: ", json.dumps([{"name": lbl} for lbl in self.config_env["object_labels"]]))
         for k, v in VARIABLES.items():
+            # print("KEY: ", k)
+            # print("EVAL")
+            # print(eval(v))
             text = text.replace("$%s" % k, str(eval(v)))
+        # print("UPDATED TEXT:", text)
         return text
 
     def destroy(self):
