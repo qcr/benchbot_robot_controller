@@ -41,7 +41,7 @@ CONNS = [CONN_API_TO_ROS, CONN_ROS_TO_API, CONN_ROSCACHE_TO_API]
 
 TIMEOUT_PREPARE = 120
 TIMEOUT_ROS_PING = 5
-TIMEOUT_RUN = 90
+TIMEOUT_RUN = 120
 
 VARIABLES = {
     'ENVS_PATH':
@@ -174,6 +174,7 @@ class ControllerInstance(object):
             return True
 
     def prepare(self):
+        print("STARTING PREPARE IN ROBOT CONTROLLER")
         if self.prepared:
             self.destroy()
         self.prepared = False
@@ -222,6 +223,7 @@ class ControllerInstance(object):
         return True
 
     def start(self):
+        print("STARTING FROM ROBOT CONTROLLER")
         if self.is_running():
             print("\nController Instance already appears to be running. "
                   "Please stop the existing instance before starting again.")
