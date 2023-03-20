@@ -350,6 +350,7 @@ class RobotController(object):
         return getattr(importlib.import_module(x[0]), x[1])
 
     def _call_connection(self, connection_name, data=None):
+        print("ROBOT CONTROLLER CALL CONNECTION CALLED")
         if (self.connections[connection_name]['type']
                 in [CONN_ROS_TO_API, CONN_ROSCACHE_TO_API]):
             # Overwrite the data because it is an observation (data should be
@@ -357,6 +358,9 @@ class RobotController(object):
             # observation)
             self.connections[connection_name]['condition'].acquire()
             data = copy.deepcopy(self.connections[connection_name]['data'])
+            if connection_name == 'laser':
+                print("HAVE COLLECTED LASER DATA")
+                print(data)
             self.connections[connection_name]['condition'].release()
 
             return (data if
