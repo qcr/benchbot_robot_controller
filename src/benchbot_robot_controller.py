@@ -40,8 +40,8 @@ CONN_ROSCACHE_TO_API = 'roscache_to_api'
 CONNS = [CONN_API_TO_ROS, CONN_ROS_TO_API, CONN_ROSCACHE_TO_API]
 
 TIMEOUT_PREPARE = 120
-TIMEOUT_ROS_PING = 5
-TIMEOUT_RUN = 90
+TIMEOUT_ROS_PING = 20
+TIMEOUT_RUN = 120
 
 VARIABLES = {
     'ENVS_PATH':
@@ -57,7 +57,7 @@ VARIABLES = {
     'START_POSE':
         "self.config_env['start_pose']",
     'OBJECT_LABELS':
-        'str(json.dumps([{"name": lbl.encode("ascii")} for lbl in self.config_env["object_labels"]]))'
+        'str(json.dumps([{"name": lbl} for lbl in self.config_env["object_labels"]]))'
 }
 
 _CMD_DELETE_FILE = 'rm -f $FILENAME'
