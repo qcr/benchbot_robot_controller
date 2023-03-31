@@ -40,7 +40,7 @@ CONN_ROSCACHE_TO_API = 'roscache_to_api'
 CONNS = [CONN_API_TO_ROS, CONN_ROS_TO_API, CONN_ROSCACHE_TO_API]
 
 TIMEOUT_PREPARE = 120
-TIMEOUT_ROS_PING = 5
+TIMEOUT_ROS_PING = 20
 TIMEOUT_RUN = 120
 
 VARIABLES = {
@@ -57,7 +57,6 @@ VARIABLES = {
     'START_POSE':
         "self.config_env['start_pose']",
     'OBJECT_LABELS':
-        # 'str(json.dumps([{"name": lbl.encode("ascii")} for lbl in self.config_env["object_labels"]]))'
         'str(json.dumps([{"name": lbl} for lbl in self.config_env["object_labels"]]))'
 }
 
@@ -94,16 +93,8 @@ class ControllerInstance(object):
         self.prepared = False
 
     def _replace_variables(self, text):
-        # print("TEXT: ", text)
-        # print("SOMETHING: ", self.config_env["object_labels"])
-        # print("SOMETHING ELSE: ", [{"name": lbl.encode("ascii")} for lbl in self.config_env["object_labels"]])
-        # print("SOMETHING MORE: ", json.dumps([{"name": lbl} for lbl in self.config_env["object_labels"]]))
         for k, v in VARIABLES.items():
-            # print("KEY: ", k)
-            # print("EVAL")
-            # print(eval(v))
             text = text.replace("$%s" % k, str(eval(v)))
-        # print("UPDATED TEXT:", text)
         return text
 
     def destroy(self):
