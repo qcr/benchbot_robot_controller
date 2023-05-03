@@ -253,7 +253,6 @@ class ControllerInstance(object):
         if not self.is_running():
             print("\nController isn't running, so nothing to stop.")
             return True
-
         # Get the stop command
         cmd = self._replace_variables(self.config_robot['stop_cmd'])
 
@@ -566,6 +565,10 @@ class RobotController(object):
                 else:
                     self.stop()
                     self.state['selected_environment'] = self._env_next()
+                    self.instance.config_env = self.config['environments'][self.state['selected_environment']]
+                    if 'trajectory_pose_next' in self.state:
+                        del self.state['trajectory_pose_next']
+                        del self.state['trajectory_poses']
                     self.start()
                     success = True
                 return flask.jsonify({'next_success': success})
